@@ -199,21 +199,16 @@ function recordingFor(text) {
   return ss.length && ss.every((s) => REC_SYL.has(sylName(s))) ? ["syl", ss.map(sylName)] : null;
 }
 
-let zhVoices = [], zhVoice = null;
-// Neural/online voices (Edge's "Xiaoxiao Online (Natural)", Google, Apple Premium) sound far less robotic
-// Apple's novelty voices (Eddy, Grandma, Rocko…) go last
-const voiceRank = (v) => (/^(eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley)\b/i.test(v.name) ? 3 : 0) + (/natural|neural/i.test(v.name) ? 0 : /online|google|premium|enhanced/i.test(v.name) ? 1 : 2) + (/zh[-_]CN/i.test(v.lang) ? 0 : 0.5);
+let zhVoice = null;
 function loadVoices() {
   if (!("speechSynthesis" in window)) return;
-  zhVoices = speechSynthesis.getVoices().filter((v) => /^zh/i.test(v.lang) && !/HK|yue/i.test(v.lang)).sort((a, b) => voiceRank(a) - voiceRank(b));
-  const want = settings().voice;
-  zhVoice = zhVoices.find((v) => v.voiceURI === want) || zhVoices[0] || null;
+  const vs = speechSynthesis.getVoices();
+  zhVoice = vs.find((v) => /zh[-_]CN/i.test(v.lang)) || vs.find((v) => /^zh/i.test(v.lang) && !/HK|yue/i.test(v.lang)) || null;
 }
-if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { const n = zhVoices.length; loadVoices(); if (n !== zhVoices.length && S.view === "study") render(); }; }
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 
 function ttsSpeak(text) {
   if (!("speechSynthesis" in window)) return toast("This browser has no speech voice.");
-  loadVoices();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "zh-CN"; if (zhVoice) u.voice = zhVoice; u.rate = settings().rate || 0.8;
   speechSynthesis.speak(u);
@@ -263,7 +258,7 @@ function playWord(name) {
 }
 function speak(text) {
   stopAudio();
-  const rec = settings().voice && settings().voice !== "human" ? null : recordingFor(text);
+  const rec = settings().voice === "default" ? null : recordingFor(text);
   if (!rec) return ttsSpeak(text);
   const p = rec[0] === "word" ? playWord(rec[1]) : playSyllables(rec[1]);
   Promise.resolve(p).catch(() => ttsSpeak(text)); // offline or missing file: fall back to the browser voice
@@ -355,8 +350,6 @@ const MODES = [
   ["type", "拼", "Type pinyin", "See, hear or read the meaning; type the pinyin with tones."],
   ["build", "部", "Radical builder", "Assemble characters from parts, name each radical, find the sound part."],
 ];
-const LEN_MAX = 200;
-const lenLabel = (n) => (n ? String(n) : "∞");
 const modeSummary = (ms) => (ms.length ? ms.map((m) => MODES.find((x) => x[0] === m)[2]).join(" + ") : "Random mix");
 function viewStudy(app) {
   const fs = folders();
@@ -371,17 +364,17 @@ function viewStudy(app) {
       <button class="chip" data-folder="" aria-pressed="${!sc.length}">All folders<span class="n">${allWords().length}</span></button>
       ${[...fs].map(([f, ws]) => `<button class="chip" data-folder="${esc(f)}" aria-pressed="${sc.includes(f)}">${esc(f)}<span class="n">${ws.length}</span></button>`).join("")}
     </div>
+    <div class="row">
+      <label class="field">Questions per round
+        <select id="len">${[10, 20, 40, 0].map((v) => `<option value="${v}" ${st.len === v ? "selected" : ""}>${v || "Endless"}</option>`).join("")}</select>
+      </label>
+    </div>
   </section>
   <section class="block">
     <div class="spread"><div class="eyebrow">Practice</div><span class="muted" style="font-size:13px">Pick one or several</span></div>
     <div class="modes" id="modes">
       <button class="mode" data-mode="" aria-pressed="${!modes.length}"><span class="glyph">乱</span><span class="t">Random mix</span><span class="d">Every exercise type, shuffled across your selection. Weak words come up more.</span></button>
       ${MODES.map(([m, g, t, d]) => `<button class="mode" data-mode="${m}" aria-pressed="${modes.includes(m)}"><span class="glyph">${g}</span><span class="t">${t}</span><span class="d">${d}</span></button>`).join("")}
-    </div>
-    <div class="len">
-      <div class="spread"><label for="len" class="eyebrow" style="margin:0">Questions per round</label><output id="len-out" class="pix">${lenLabel(st.len)}</output></div>
-      <input type="range" id="len" min="5" max="${LEN_MAX + 1}" step="1" value="${st.len || LEN_MAX + 1}" aria-valuetext="${lenLabel(st.len)}">
-      <div class="spread muted" style="font-size:11px"><span>5</span><span>${LEN_MAX} · then ∞</span></div>
     </div>
     <button class="btn solid start" id="start">Start · ${esc(modeSummary(modes))}</button>
   </section>
@@ -407,21 +400,15 @@ function viewStudy(app) {
     <div class="eyebrow">Settings</div>
     <div class="form-grid">
       <label class="field">Voice
-        <select id="voice"><option value="human" ${!st.voice || st.voice === "human" ? "selected" : ""}>Human recordings</option>${zhVoices.map((v) => `<option value="${esc(v.voiceURI)}" ${st.voice === v.voiceURI ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select></label>
+        <select id="voice"><option value="human" ${st.voice !== "default" ? "selected" : ""}>Human recordings</option><option value="default" ${st.voice === "default" ? "selected" : ""}>Default</option></select></label>
       <label class="field">Voice speed
         <select id="rate">${[[0.6, "Slow"], [0.8, "Learner"], [1, "Natural"]].map(([v, l]) => `<option value="${v}" ${st.rate === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <div class="field">Test voice<div class="row"><button class="speak" data-say="学生">▶ 学生</button><button class="speak" data-say="你好">▶ 你好</button></div></div>
     </div>
     <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} Human recordings: native speakers from the audio-cmn project (CC BY-SA). Words without a recording are pieced together from single syllables, and sentences use the browser voice.</p>
-    <div><button class="btn ghost" id="reset">Reset all progress</button></div>
   </section>`;
   $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
-  $("#voice", app).onchange = (e) => { st.voice = e.target.value; Store.save(); loadVoices(); speak("学生"); };
-  const reset = $("#reset", app);
-  reset.onclick = () => {
-    if (!reset.dataset.armed) { reset.dataset.armed = 1; reset.textContent = "Tap again to reset"; return; }
-    Store.data.progress = {}; Store.save(); toast("Progress reset."); render();
-  };
+  $("#voice", app).onchange = (e) => { st.voice = e.target.value; Store.save(); speak("学生"); };
 
   $("#scope", app).onclick = (e) => {
     const b = e.target.closest("[data-folder]"); if (!b) return;
@@ -433,11 +420,7 @@ function viewStudy(app) {
   for (const id of ["dir", "front", "wprompt", "tprompt"]) {
     $("#" + id, app).onchange = (e) => { st[id] = e.target.value; Store.save(); };
   }
-  // The slider only updates its label while dragging; saving waits for release so dragging stays smooth
-  const len = $("#len", app), out = $("#len-out", app);
-  const lenVal = () => (+len.value > LEN_MAX ? 0 : +len.value);
-  len.oninput = () => { out.textContent = lenLabel(lenVal()); len.setAttribute("aria-valuetext", out.textContent); };
-  len.onchange = () => { st.len = lenVal(); Store.save(); };
+  $("#len", app).onchange = (e) => { st.len = +e.target.value; Store.save(); };
   $("#modes", app).onclick = (e) => {
     const b = e.target.closest("[data-mode]"); if (!b) return;
     const m = b.dataset.mode;
