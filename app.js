@@ -159,19 +159,114 @@ function weightedPick(pool, avoid = []) {
 }
 
 /* ---------- speech ---------- */
-let zhVoice = null;
+// Human recordings first (audio-cmn, CC BY-SA): a whole-word recording when there is one,
+// otherwise the word is pieced together from single-syllable recordings in the right tones.
+// The browser's synthetic voice is only the last resort (or the user's choice in Settings).
+const REC_WORDS = new Set(typeof AUDIO_WORDS === "string" ? AUDIO_WORDS.split(" ") : []);
+const REC_SYL = new Set(typeof AUDIO_SYL === "string" ? AUDIO_SYL.split(" ") : []);
+const hexName = (h) => [...h].map((c) => c.codePointAt(0).toString(16)).join("-");
+const sylName = (s) => s.base.replace(/ü/g, "v") + (s.tone === 5 ? 1 : s.tone); // no neutral-tone files: they matched tone 1
+
+// One {base, tone} per character, read from the word's own pinyin (so 行 is háng in 银行, xíng in 自行车)
+function tonedSyllables(w) {
+  const sy = syllables(w); if (!sy.length) return [];
+  const letters = [...String(w.pinyin).toLowerCase().normalize("NFC")].filter((ch) => MARKED[ch] || /[a-zü]/.test(ch));
+  let i = 0;
+  return sy.map((s) => {
+    const part = letters.slice(i, (i += s.base.length));
+    const mark = part.find((ch) => MARKED[ch]);
+    return { base: s.base, tone: mark ? MARKED[mark][1] : 5 };
+  });
+}
+// Third-tone sandhi: a 3rd tone before another 3rd tone is said as a 2nd (你好 → ní hǎo)
+function sandhi(ss) {
+  return ss.map((s, i) => (s.tone === 3 && ss[i + 1]?.tone === 3 ? { ...s, tone: 2 } : s));
+}
+// What to play for a piece of text: ["word", file] | ["syl", [files]] | null (use the browser voice)
+function recordingFor(text) {
+  const cs = chars(text);
+  if (cs.join("") !== text.trim()) return null; // sentences and punctuation go to the browser voice
+  const w = wordByHanzi(text);
+  if (cs.length === 1) {
+    const py = w ? w.pinyin : String(CHARS[text]?.py || "").split("/")[0];
+    const s = tonedSyllables({ hanzi: text, pinyin: py })[0];
+    if (s && s.tone !== 5 && REC_SYL.has(sylName(s))) return ["syl", [sylName(s)]];
+    return REC_WORDS.has(text) ? ["word", hexName(text)] : null;
+  }
+  if (REC_WORDS.has(text)) return ["word", hexName(text)];
+  if (!w) return null;
+  const ss = sandhi(tonedSyllables(w)).filter((s) => s.base !== "r"); // erhua 儿 has no syllable of its own
+  return ss.length && ss.every((s) => REC_SYL.has(sylName(s))) ? ["syl", ss.map(sylName)] : null;
+}
+
+let zhVoices = [], zhVoice = null;
+// Neural/online voices (Edge's "Xiaoxiao Online (Natural)", Google, Apple Premium) sound far less robotic
+// Apple's novelty voices (Eddy, Grandma, Rocko…) go last
+const voiceRank = (v) => (/^(eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley)\b/i.test(v.name) ? 3 : 0) + (/natural|neural/i.test(v.name) ? 0 : /online|google|premium|enhanced/i.test(v.name) ? 1 : 2) + (/zh[-_]CN/i.test(v.lang) ? 0 : 0.5);
 function loadVoices() {
   if (!("speechSynthesis" in window)) return;
-  const vs = speechSynthesis.getVoices();
-  zhVoice = vs.find((v) => /zh[-_]CN/i.test(v.lang)) || vs.find((v) => /^zh/i.test(v.lang) && !/HK|yue/i.test(v.lang)) || null;
+  zhVoices = speechSynthesis.getVoices().filter((v) => /^zh/i.test(v.lang) && !/HK|yue/i.test(v.lang)).sort((a, b) => voiceRank(a) - voiceRank(b));
+  const want = settings().voice;
+  zhVoice = zhVoices.find((v) => v.voiceURI === want) || zhVoices[0] || null;
 }
-if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-function speak(text) {
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { const n = zhVoices.length; loadVoices(); if (n !== zhVoices.length && S.view === "study") render(); }; }
+
+function ttsSpeak(text) {
   if (!("speechSynthesis" in window)) return toast("This browser has no speech voice.");
-  speechSynthesis.cancel();
+  loadVoices();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "zh-CN"; if (zhVoice) u.voice = zhVoice; u.rate = settings().rate || 0.8;
   speechSynthesis.speak(u);
+}
+
+let audioCtx = null, playing = [];
+const bufCache = new Map();
+function stopAudio() {
+  playing.forEach((p) => { try { p.stop ? p.stop() : p.pause(); } catch {} });
+  playing = [];
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+}
+// Decode a syllable and cut the silence around it, so pieced-together words flow
+function trimmedBuffer(name) {
+  if (!bufCache.has(name)) {
+    bufCache.set(name, fetch(`audio/s/${name}.mp3`).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then((b) => audioCtx.decodeAudioData(b)).then((buf) => {
+        const d = buf.getChannelData(0); const th = 0.02; const pad = Math.round(buf.sampleRate * 0.015);
+        let a = 0, z = d.length - 1;
+        while (a < z && Math.abs(d[a]) < th) a++;
+        while (z > a && Math.abs(d[z]) < th) z--;
+        a = Math.max(0, a - pad); z = Math.min(d.length, z + pad);
+        const out = audioCtx.createBuffer(buf.numberOfChannels, z - a, buf.sampleRate);
+        for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(a, z), c);
+        return out;
+      }).catch((e) => { bufCache.delete(name); throw e; }));
+  }
+  return bufCache.get(name);
+}
+// Speed for recordings: slower settings stretch the gaps between syllables, keeping the voice's pitch
+async function playSyllables(names) {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  const bufs = await Promise.all(names.map(trimmedBuffer));
+  const gap = names.length > 1 ? Math.max(0, (0.9 - (settings().rate || 0.8)) * 0.6) : 0;
+  let t = audioCtx.currentTime + 0.03;
+  for (const b of bufs) {
+    const src = audioCtx.createBufferSource(); src.buffer = b; src.connect(audioCtx.destination);
+    src.start(t); playing.push(src); t += b.duration + gap;
+  }
+}
+function playWord(name) {
+  const a = new Audio(`audio/w/${name}.mp3`);
+  a.preservesPitch = true; a.playbackRate = Math.min(1.25, Math.max(0.7, (settings().rate || 0.8) / 0.8));
+  playing.push(a);
+  return a.play();
+}
+function speak(text) {
+  stopAudio();
+  const rec = settings().voice && settings().voice !== "human" ? null : recordingFor(text);
+  if (!rec) return ttsSpeak(text);
+  const p = rec[0] === "word" ? playWord(rec[1]) : playSyllables(rec[1]);
+  Promise.resolve(p).catch(() => ttsSpeak(text)); // offline or missing file: fall back to the browser voice
 }
 const speakBtn = (h, cls = "") => `<button class="speak ${cls}" data-say="${esc(h)}">▶ Play sound</button>`;
 
@@ -253,11 +348,22 @@ const DIRS = [
   { id: "audio-en", from: "audio", to: "en", label: "Sound → English" },
   { id: "mixed", label: "Mixed directions" },
 ];
+const MODES = [
+  ["flash", "卡", "Flashcards", "Flip, then mark Again or Know it."],
+  ["mc", "选", "ABC questions", "Pick one of four. Choose a direction below."],
+  ["write", "写", "Write it", "Hear or read a word, draw the strokes in a 米字格 grid."],
+  ["type", "拼", "Type pinyin", "See, hear or read the meaning; type the pinyin with tones."],
+  ["build", "部", "Radical builder", "Assemble characters from parts, name each radical, find the sound part."],
+];
+const LEN_MAX = 200;
+const lenLabel = (n) => (n ? String(n) : "∞");
+const modeSummary = (ms) => (ms.length ? ms.map((m) => MODES.find((x) => x[0] === m)[2]).join(" + ") : "Random mix");
 function viewStudy(app) {
   const fs = folders();
   const sc = liveScope();
   const n = scopeWords().length;
   const st = settings();
+  const modes = (st.modes || []).filter((m) => MODES.some((x) => x[0] === m));
   app.innerHTML = `
   <section class="block">
     <div class="spread"><h1 class="pix" style="font-size:34px">WHAT TO STUDY</h1><span class="muted">${n} word${n === 1 ? "" : "s"} selected</span></div>
@@ -265,22 +371,19 @@ function viewStudy(app) {
       <button class="chip" data-folder="" aria-pressed="${!sc.length}">All folders<span class="n">${allWords().length}</span></button>
       ${[...fs].map(([f, ws]) => `<button class="chip" data-folder="${esc(f)}" aria-pressed="${sc.includes(f)}">${esc(f)}<span class="n">${ws.length}</span></button>`).join("")}
     </div>
-    <div class="row">
-      <label class="field">Questions per round
-        <select id="len">${[10, 20, 40, 0].map((v) => `<option value="${v}" ${st.len === v ? "selected" : ""}>${v || "Endless"}</option>`).join("")}</select>
-      </label>
-    </div>
   </section>
   <section class="block">
-    <div class="eyebrow">Practice</div>
-    <div class="modes">
-      <button class="mode featured" data-mode="mix"><span class="glyph">乱</span><span class="t">Random mix</span><span class="d">Every exercise type, shuffled across your selection. Weak words come up more.</span></button>
-      <button class="mode" data-mode="flash"><span class="glyph">卡</span><span class="t">Flashcards</span><span class="d">Flip, then mark Again or Know it.</span></button>
-      <button class="mode" data-mode="mc"><span class="glyph">选</span><span class="t">ABC questions</span><span class="d">Pick one of four. Choose a direction below.</span></button>
-      <button class="mode" data-mode="write"><span class="glyph">写</span><span class="t">Write it</span><span class="d">Hear or read a word, draw the strokes in a 米字格 grid.</span></button>
-      <button class="mode" data-mode="type"><span class="glyph">拼</span><span class="t">Type pinyin</span><span class="d">See, hear or read the meaning; type the pinyin with tones.</span></button>
-      <button class="mode" data-mode="build"><span class="glyph">部</span><span class="t">Radical builder</span><span class="d">Assemble characters from parts, name each radical, find the sound part.</span></button>
+    <div class="spread"><div class="eyebrow">Practice</div><span class="muted" style="font-size:13px">Pick one or several</span></div>
+    <div class="modes" id="modes">
+      <button class="mode" data-mode="" aria-pressed="${!modes.length}"><span class="glyph">乱</span><span class="t">Random mix</span><span class="d">Every exercise type, shuffled across your selection. Weak words come up more.</span></button>
+      ${MODES.map(([m, g, t, d]) => `<button class="mode" data-mode="${m}" aria-pressed="${modes.includes(m)}"><span class="glyph">${g}</span><span class="t">${t}</span><span class="d">${d}</span></button>`).join("")}
     </div>
+    <div class="len">
+      <div class="spread"><label for="len" class="eyebrow" style="margin:0">Questions per round</label><output id="len-out" class="pix">${lenLabel(st.len)}</output></div>
+      <input type="range" id="len" min="5" max="${LEN_MAX + 1}" step="1" value="${st.len || LEN_MAX + 1}" aria-valuetext="${lenLabel(st.len)}">
+      <div class="spread muted" style="font-size:11px"><span>5</span><span>${LEN_MAX} · then ∞</span></div>
+    </div>
+    <button class="btn solid start" id="start">Start · ${esc(modeSummary(modes))}</button>
   </section>
   <section class="block">
     <div class="eyebrow">Options</div>
@@ -303,14 +406,17 @@ function viewStudy(app) {
   <section class="block">
     <div class="eyebrow">Settings</div>
     <div class="form-grid">
+      <label class="field">Voice
+        <select id="voice"><option value="human" ${!st.voice || st.voice === "human" ? "selected" : ""}>Human recordings</option>${zhVoices.map((v) => `<option value="${esc(v.voiceURI)}" ${st.voice === v.voiceURI ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select></label>
       <label class="field">Voice speed
         <select id="rate">${[[0.6, "Slow"], [0.8, "Learner"], [1, "Natural"]].map(([v, l]) => `<option value="${v}" ${st.rate === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <div class="field">Test voice<div>${speakBtn("你好，我是学生。")}</div></div>
+      <div class="field">Test voice<div class="row"><button class="speak" data-say="学生">▶ 学生</button><button class="speak" data-say="你好">▶ 你好</button></div></div>
     </div>
-    <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} ${zhVoice ? "" : "No Mandarin voice was found yet; install one in your system's speech settings if playback sounds wrong."}</p>
+    <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} Human recordings: native speakers from the audio-cmn project (CC BY-SA). Words without a recording are pieced together from single syllables, and sentences use the browser voice.</p>
     <div><button class="btn ghost" id="reset">Reset all progress</button></div>
   </section>`;
   $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
+  $("#voice", app).onchange = (e) => { st.voice = e.target.value; Store.save(); loadVoices(); speak("学生"); };
   const reset = $("#reset", app);
   reset.onclick = () => {
     if (!reset.dataset.armed) { reset.dataset.armed = 1; reset.textContent = "Tap again to reset"; return; }
@@ -324,20 +430,39 @@ function viewStudy(app) {
     if (next.length === fs.size) next = [];
     st.scope = next; Store.save(); render();
   };
-  for (const id of ["len", "dir", "front", "wprompt", "tprompt"]) {
-    $("#" + id, app).onchange = (e) => { st[id] = id === "len" ? +e.target.value : e.target.value; Store.save(); };
+  for (const id of ["dir", "front", "wprompt", "tprompt"]) {
+    $("#" + id, app).onchange = (e) => { st[id] = e.target.value; Store.save(); };
   }
-  $$(".mode", app).forEach((b) => (b.onclick = () => startSession(b.dataset.mode)));
+  // The slider only updates its label while dragging; saving waits for release so dragging stays smooth
+  const len = $("#len", app), out = $("#len-out", app);
+  const lenVal = () => (+len.value > LEN_MAX ? 0 : +len.value);
+  len.oninput = () => { out.textContent = lenLabel(lenVal()); len.setAttribute("aria-valuetext", out.textContent); };
+  len.onchange = () => { st.len = lenVal(); Store.save(); };
+  $("#modes", app).onclick = (e) => {
+    const b = e.target.closest("[data-mode]"); if (!b) return;
+    const m = b.dataset.mode;
+    let next = m ? (modes.includes(m) ? modes.filter((x) => x !== m) : [...modes, m]) : [];
+    if (next.length === MODES.length) next = [];
+    st.modes = next; Store.save(); render();
+  };
+  $("#start", app).onclick = () => startSession(modes);
 }
 
 /* ---------- SESSION ---------- */
-function startSession(mode) {
+// modes: the exercise types picked on the Study page; empty = random mix of everything.
+// Flashcards alone run as a deck; any other choice mixes the picked types question by question.
+const MODE_WEIGHT = { mc: 3, type: 1, build: 2, flash: 1, write: 2 };
+const chosen = (kind) => S.session.modes.includes(kind);
+function startSession(modes = []) {
   const pool = scopeWords();
   if (!pool.length) return toast("No words in this selection yet.");
-  if (mode === "build" && !buildableChars(pool).length) return toast("These words have no radical breakdowns yet.");
-  if (mode === "write" && !window.HanziWriter) return toast("The stroke engine didn't load. Check your connection.");
+  const asked = modes;
+  if (!window.HanziWriter) modes = modes.filter((m) => m !== "write");
+  if (!buildableChars(pool).length) modes = modes.filter((m) => m !== "build");
+  if (asked.length && !modes.length) return toast(asked.includes("write") ? "The stroke engine didn't load. Check your connection." : "These words have no radical breakdowns yet.");
+  const mode = modes.length === 1 && modes[0] === "flash" ? "flash" : "mix";
   const len = settings().len;
-  S.session = { mode, pool, n: 0, len, results: [], recent: [], q: null };
+  S.session = { mode, modes, pool, n: 0, len, results: [], recent: [], q: null };
   if (mode === "flash") {
     const deck = []; const size = len ? Math.min(len, pool.length) : pool.length;
     const pickFrom = [...pool];
@@ -355,12 +480,10 @@ function nextQuestion() {
   s.n++;
   const word = s.mode === "flash" ? s.deck[0] : weightedPick(s.pool, s.recent);
   s.recent = [word.hanzi, ...s.recent].slice(0, Math.min(4, Math.floor(s.pool.length / 2)));
-  let kind = s.mode;
+  let kind = "flash";
   if (s.mode === "mix") {
-    const kinds = ["mc", "mc", "mc", "type", "build", "build", "flash"];
-    if (window.HanziWriter) kinds.push("write", "write");
-    kind = pick(kinds);
-    if (kind === "build" && !buildableChars(s.pool).length) kind = "mc";
+    const types = s.modes.length ? s.modes : Object.keys(MODE_WEIGHT).filter((m) => (m !== "write" || window.HanziWriter) && (m !== "build" || buildableChars(s.pool).length));
+    kind = pick(types.flatMap((m) => Array(MODE_WEIGHT[m]).fill(m)));
   }
   s.q = { kind, word, done: false };
   viewSession($("#app"));
@@ -425,7 +548,7 @@ const ASK_TO = { hanzi: "Which character?", pinyin: "Which pinyin?", en: "What d
 
 /* ABC */
 function qMC(el, q) {
-  let dir = DIRS.find((d) => d.id === (S.session.mode === "mc" ? settings().dir : "mixed")) || DIRS[0];
+  let dir = DIRS.find((d) => d.id === (chosen("mc") ? settings().dir : "mixed")) || DIRS[0];
   if (dir.id === "mixed") dir = q.dir || (q.dir = pick(DIRS.slice(0, -1)));
   const { word } = q; const pool = S.session.pool;
   const correct = word[FIELD[dir.to]];
@@ -457,7 +580,7 @@ function qMC(el, q) {
 function qFlash(el, q) {
   const { word } = q;
   let front = settings().front || "hanzi";
-  if (S.session.mode !== "flash" || front === "mixed") front = q.front || (q.front = pick(["hanzi", "pinyin", "en", "audio"]));
+  if (!chosen("flash") || front === "mixed") front = q.front || (q.front = pick(["hanzi", "pinyin", "en", "audio"]));
   const backBody = `<div class="big-han" style="font-size:clamp(56px,14vw,96px)">${esc(word.hanzi)}</div>
     <div class="big-py" style="font-size:24px">${esc(word.pinyin)}</div><div class="big-en" style="font-size:18px">${esc(word.en)}</div>
     <div style="font-size:13px;display:grid;gap:2px;text-align:left">${compactBreakdown(word)}</div>`;
@@ -498,7 +621,7 @@ function qFlash(el, q) {
 function qType(el, q) {
   const { word } = q;
   let from = settings().tprompt || "mixed";
-  if (S.session.mode !== "type" || from === "mixed") from = q.from || (q.from = pick(["hanzi", "audio", "en"]));
+  if (!chosen("type") || from === "mixed") from = q.from || (q.from = pick(["hanzi", "audio", "en"]));
   el.innerHTML = promptHTML(word, from, "Type the pinyin") +
     `<form class="type-in" id="tf" autocomplete="off"><input type="text" id="tin" inputmode="latin" autocapitalize="off" spellcheck="false" placeholder="e.g. ni3 hao3" aria-label="Pinyin answer"><button class="btn solid">Check</button></form>
      <p class="muted" style="font-size:13px;margin:8px 0 0">Tone numbers <b>1–4</b> after each syllable (neutral: no number). Use <b>v</b> for ü. Tone marks work too.</p>
@@ -521,7 +644,7 @@ function qType(el, q) {
 function qWrite(el, q) {
   const { word } = q;
   let from = settings().wprompt || "mixed";
-  if (S.session.mode !== "write" || from === "mixed") from = q.from || (q.from = pick(["audio", "pinyin", "en"]));
+  if (!chosen("write") || from === "mixed") from = q.from || (q.from = pick(["audio", "pinyin", "en"]));
   const cs = chars(word.hanzi);
   q.idx = 0; q.mistakes = 0; q.revealed = false;
   el.innerHTML = promptHTML(word, from, `Write it · ${cs.length} character${cs.length > 1 ? "s" : ""}`) +
@@ -665,7 +788,7 @@ function renderSummary(app) {
     <div class="actions"><button class="btn solid" id="again">Go again</button><button class="btn" id="home">Change mode</button></div>
   </section>
   ${missed.length ? `<section class="block"><div class="eyebrow">Review these</div><div class="missed">${missed.map(wordItem).join("")}</div></section>` : ""}`;
-  $("#again", app).onclick = () => startSession(s.mode);
+  $("#again", app).onclick = () => startSession(s.modes);
   $("#home", app).onclick = () => go("study", null, false);
 }
 

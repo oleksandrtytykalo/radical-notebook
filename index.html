@@ -89,8 +89,23 @@ label.field { display: grid; gap: 4px; font-size: 13px; }
 .mode .glyph { font-family: var(--f-han); font-size: 30px; line-height: 1; }
 .mode .t { font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 13px; }
 .mode .d { font-size: 13px; color: var(--dim); }
-.mode.featured { background: var(--ink); color: var(--paper); }
-.mode.featured .d { color: inherit; opacity: .75; }
+.mode[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.mode[aria-pressed="true"] .d { color: inherit; opacity: .75; }
+@media (max-width: 520px) {
+  .modes { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mode { padding: 10px 12px; }
+  .mode .d { display: none; }
+}
+.len { display: grid; gap: 6px; border: 2px solid var(--ink); padding: 12px 14px; }
+.len output { font-size: 34px; line-height: 1; min-width: 2ch; text-align: right; }
+.len input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 36px; background: transparent; margin: 0; cursor: pointer; touch-action: pan-y; }
+.len input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--ink); }
+.len input[type="range"]::-moz-range-track { height: 2px; background: var(--ink); }
+.len input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -12px; background: var(--paper); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); border-radius: 0; }
+.len input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; background: var(--paper); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); border-radius: 0; }
+.len input[type="range"]:active::-webkit-slider-thumb { background: var(--ink); }
+.len input[type="range"]:active::-moz-range-thumb { background: var(--ink); }
+.start { width: 100%; padding: 14px; font-size: 14px; }
 
 /* study screen */
 .study-head { display: flex; align-items: center; gap: 12px; padding-block: 14px; }
@@ -323,6 +338,7 @@ kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; 
 
 <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5.0/dist/hanzi-writer.min.js"></script>
 <script src="data.js" charset="utf-8"></script>
+<script src="audio.js" charset="utf-8"></script>
 <script src="app.js" charset="utf-8"></script>
 </body>
 </html>
