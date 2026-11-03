@@ -283,6 +283,15 @@ button.part { cursor: pointer; }
 /* summary */
 .score { font-family: var(--f-pix); font-size: 84px; line-height: .9; }
 .missed { display: grid; gap: 0; border: 2px solid var(--ink); }
+.vgroup { display: grid; gap: 6px; margin-top: 4px; }
+.vletter { font-size: 28px; line-height: 1; }
+@media (min-width: 641px) {
+  .vgroup { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .vletter { font-size: 32px; position: sticky; top: 8px; }
+}
+.vfolders { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.vfolders span { font-size: 11px; border: 1px solid var(--rule); padding: 0 5px; color: var(--dim); }
+input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 
 /* toast + sheet */
 .toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; z-index: 20; font-size: 13px; max-width: calc(100% - 32px); }
@@ -302,9 +311,9 @@ kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; 
     <button class="logo" id="logo" aria-label="Radical Notebook home"><span class="seal">部</span><span class="name">RADICAL NOTEBOOK</span></button>
     <nav class="tabs" id="tabs">
       <button data-view="study">Study</button>
-      <button data-view="library">Words</button>
+      <button data-view="library">Islands</button>
+      <button data-view="vocab">Vocabulary</button>
       <button data-view="radicals">Radicals</button>
-      <button data-view="add">Add</button>
     </nav>
     <button class="icon-btn" id="theme-btn" aria-label="Invert colours" title="Invert colours">◐</button>
   </div>

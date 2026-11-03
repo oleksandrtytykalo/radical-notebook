@@ -236,10 +236,10 @@ function back() { const [v, p] = S.history.pop() || ["study", null]; go(v, p, fa
 
 function render() {
   $$("#tabs button").forEach((b) => b.toggleAttribute("aria-current", false));
-  const tab = { study: "study", session: "study", library: "library", detail: "library", radicals: "radicals", part: "radicals", add: "add" }[S.view];
+  const tab = { study: "study", session: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
   const cur = $(`#tabs button[data-view="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
   const app = $("#app");
-  ({ study: viewStudy, library: viewLibrary, detail: viewDetail, radicals: viewRadicals, part: viewPart, add: viewAdd, session: viewSession })[S.view](app);
+  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession })[S.view](app);
 }
 
 /* ---------- STUDY (home) ---------- */
@@ -299,7 +299,23 @@ function viewStudy(app) {
       </label>
     </div>
     <p class="muted hide-sm" style="margin:0;font-size:13px">Keys: <kbd>1</kbd>–<kbd>4</kbd> answer · <kbd>Enter</kbd> next · <kbd>Space</kbd> flip card</p>
+  </section>
+  <section class="block">
+    <div class="eyebrow">Settings</div>
+    <div class="form-grid">
+      <label class="field">Voice speed
+        <select id="rate">${[[0.6, "Slow"], [0.8, "Learner"], [1, "Natural"]].map(([v, l]) => `<option value="${v}" ${st.rate === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <div class="field">Test voice<div>${speakBtn("你好，我是学生。")}</div></div>
+    </div>
+    <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} ${zhVoice ? "" : "No Mandarin voice was found yet; install one in your system's speech settings if playback sounds wrong."}</p>
+    <div><button class="btn ghost" id="reset">Reset all progress</button></div>
   </section>`;
+  $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
+  const reset = $("#reset", app);
+  reset.onclick = () => {
+    if (!reset.dataset.armed) { reset.dataset.armed = 1; reset.textContent = "Tap again to reset"; return; }
+    Store.data.progress = {}; Store.save(); toast("Progress reset."); render();
+  };
 
   $("#scope", app).onclick = (e) => {
     const b = e.target.closest("[data-folder]"); if (!b) return;
@@ -713,7 +729,7 @@ function viewLibrary(app) {
       </section>`;
   }).join("");
   app.innerHTML = `<section class="block">
-    <div class="spread"><h1 class="pix" style="font-size:34px">WORDS</h1><span class="muted">${allWords().length} words · ${learnedChars().length} characters</span></div>
+    <div class="spread"><h1 class="pix" style="font-size:34px">ISLANDS</h1><span class="muted">${allWords().length} words · ${learnedChars().length} characters</span></div>
     <input type="text" class="search" id="lq" placeholder="Search 字, pinyin or English" value="${esc(q)}" aria-label="Search words">
     <details class="rubric"><summary>How island levels work</summary><div class="rubric-body">
       <p style="margin:0">Every word has 5 mastery boxes: a correct answer fills one, a miss empties one. An island's mastery is how many of its boxes are filled. Follow the route: settle an island (LV 3) before moving on to the next.</p>
@@ -840,83 +856,108 @@ function viewPart(app) {
   $$("[data-char]", app).forEach((b) => (b.onclick = () => { const t = wordForChar(b.dataset.char); if (t) go("detail", t.hanzi); }));
 }
 
-/* ---------- ADD + SETTINGS ---------- */
-function viewAdd(app) {
-  const fs = [...folders().keys()];
-  const st = settings();
-  app.innerHTML = `<section class="block">
-    <h1 class="pix" style="font-size:34px">ADD A WORD</h1>
-    <p class="muted" style="margin:0;font-size:13px">For words you look up between classes. Radical breakdowns for new characters get added to the database later.</p>
-    <form class="sheet" id="addf" autocomplete="off">
-      <div class="form-grid">
-        <label class="field">Characters<input type="text" id="a-h" required placeholder="学习" lang="zh-CN"></label>
-        <label class="field">Pinyin<input type="text" id="a-p" required placeholder="xué xí  or  xue2 xi2"></label>
-        <label class="field">English<input type="text" id="a-e" required placeholder="to study"></label>
-        <label class="field">Folder<select id="a-f">${fs.map((f) => `<option ${f === st.lastFolder ? "selected" : ""}>${esc(f)}</option>`).join("")}<option value="__new">+ New folder…</option></select></label>
-        <label class="field" id="a-nf-wrap" hidden>New folder name<input type="text" id="a-nf" placeholder="Week 5 · Food"></label>
-      </div>
-      <div><button class="btn solid">Save word</button></div>
-    </form>
-  </section>
-  <section class="block">
-    <div class="eyebrow">Your added words · ${Store.data.custom.length}</div>
-    ${Store.data.custom.length ? `<div class="missed">${allWords().filter((w) => w.custom).map(wordItem).join("")}</div>` : `<p class="muted" style="margin:0">None yet.</p>`}
-    <div class="row"><button class="btn" id="exp">Copy as JSON</button><button class="btn ghost" id="imp-t">Import JSON</button></div>
-    <div id="imp-box" hidden style="display:grid;gap:8px"><textarea id="imp" rows="5" style="width:100%;font:13px var(--f-ui);border:2px solid var(--ink);background:var(--paper);color:var(--ink);padding:8px" placeholder='[{"hanzi":"学习","pinyin":"xuéxí","en":"to study","folder":"Week 5"}]'></textarea><div><button class="btn solid" id="imp-go">Import</button></div></div>
-  </section>
-  <section class="block">
-    <div class="eyebrow">Settings</div>
-    <div class="form-grid">
-      <label class="field">Voice speed
-        <select id="rate">${[[0.6, "Slow"], [0.8, "Learner"], [1, "Natural"]].map(([v, l]) => `<option value="${v}" ${st.rate === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <div class="field">Test voice<div>${speakBtn("你好，我是学生。")}</div></div>
-    </div>
-    <p class="note">${Store.synced ? "Progress and added words sync to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} ${zhVoice ? "" : "No Mandarin voice was found yet; install one in your system's speech settings if playback sounds wrong."}</p>
-    <div><button class="btn ghost" id="reset">Reset all progress</button></div>
-  </section>`;
-  const sel = $("#a-f", app);
-  sel.onchange = () => ($("#a-nf-wrap", app).hidden = sel.value !== "__new");
-  if (!fs.length) { sel.value = "__new"; $("#a-nf-wrap", app).hidden = false; }
-  $("#addf", app).onsubmit = (e) => {
-    e.preventDefault();
-    const hanzi = $("#a-h", app).value.trim(); const pinyin = numbersToMarks($("#a-p", app).value.trim()); const en = $("#a-e", app).value.trim();
-    const folder = sel.value === "__new" ? $("#a-nf", app).value.trim() || "My words" : sel.value;
-    if (!chars(hanzi).length) return toast("Enter Chinese characters.");
-    if (wordByHanzi(hanzi)) return toast(`${hanzi} is already in your words.`);
-    Store.data.custom.push({ hanzi, pinyin, en, folder }); st.lastFolder = folder; Store.save();
-    toast(`Saved ${hanzi} to ${folder}`); render();
-  };
-  $("#exp", app).onclick = () => {
-    const txt = JSON.stringify(Store.data.custom, null, 1);
-    const fallback = () => { $("#imp-box", app).hidden = false; const t = $("#imp", app); t.value = txt; t.select(); toast("Select all and copy this text."); };
-    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast("Copied."), fallback); else fallback();
-  };
-  $("#imp-t", app).onclick = () => ($("#imp-box", app).hidden = false);
-  $("#imp-go", app).onclick = () => {
-    try {
-      const arr = JSON.parse($("#imp", app).value); let n = 0;
-      for (const w of arr) if (w.hanzi && w.pinyin && w.en && !wordByHanzi(w.hanzi)) { Store.data.custom.push({ hanzi: w.hanzi, pinyin: w.pinyin, en: w.en, folder: w.folder || "Imported" }); n++; }
-      Store.save(); toast(`Imported ${n} word${n === 1 ? "" : "s"}.`); render();
-    } catch { toast("That isn't valid JSON. Check the brackets and quotes."); }
-  };
-  $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
-  const reset = $("#reset", app);
-  reset.onclick = () => {
-    if (!reset.dataset.armed) { reset.dataset.armed = 1; reset.textContent = "Tap again to reset"; return; }
-    Store.data.progress = {}; Store.save(); toast("Progress reset."); render();
-  };
+/* ---------- VOCABULARY ---------- */
+// Ranked lookup. Whole meanings beat whole words, which beat word starts:
+// "I" finds 我 ("I, me") but not every gloss that merely contains the letter i.
+const ARTICLE = /^(to|a|an|the)\s+/;
+function glosses(en) {
+  return String(en).split(/[,;/]/).map((g) => {
+    const full = norm(g);
+    const core = full.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim().replace(ARTICLE, "");
+    return { core, full, words: core.split(/[^a-z']+/).filter(Boolean) };
+  }).filter((g) => g.core || g.full);
 }
-// "xue2 xi2" -> "xué xí"
-function numbersToMarks(p) {
-  if (!/[1-5]/.test(p)) return p;
-  return p.replace(/u:|v/gi, "ü").replace(/([a-zü]+)([1-5])/gi, (m, syl, t) => {
-    t = +t; if (t === 5) return syl;
-    const s = syl.toLowerCase();
-    let i = s.search(/[ae]/); if (i < 0) i = s.indexOf("ou");
-    if (i < 0) { const vs = [...s].map((c, k) => ("aeiouü".includes(c) ? k : -1)).filter((k) => k >= 0); i = vs.length ? vs[vs.length - 1] : -1; }
-    if (i < 0) return syl;
-    const a = [...syl]; a[i] = TONES[s[i]][t - 1]; return a.join("");
+function englishScore(w, q) {
+  const qn = norm(q).replace(ARTICLE, ""); if (!qn) return 0;
+  const qw = qn.split(/[^a-z']+/).filter(Boolean); if (!qw.length) return 0;
+  const phrase = (words) => words.some((_, i) => qw.every((x, k) => words[i + k] === x));
+  let best = 0;
+  glosses(w.en).forEach((g, i) => {
+    let s = 0;
+    if (g.core === qn) s = 100 - i;
+    else if (g.core.startsWith(qn + " ")) s = 70;
+    else if (phrase(g.words)) s = 50;
+    else if (phrase(g.full.split(/[^a-z']+/))) s = 30;
+    else if (qn.length >= 3 && qw.length === 1 && g.words.some((x) => x.startsWith(qn))) s = 20;
+    best = Math.max(best, s);
   });
+  return best;
+}
+// The word's pinyin cut into one syllable per character, using each character's readings
+// (银行 → yin + hang). Empty when a character has no card or the readings don't line up.
+function syllables(w) {
+  let rest = analysePinyin(w.pinyin).base; const out = [];
+  for (const c of chars(w.hanzi)) {
+    const rs = (String(CHARS[c]?.py || "") + (c === "儿" ? "/r" : "")).split(/[/,]/).map(analysePinyin).filter((r) => r.base && rest.startsWith(r.base));
+    if (!rs.length) return [];
+    const r = rs.sort((x, y) => y.base.length - x.base.length)[0];
+    out.push(r); rest = rest.slice(r.base.length);
+  }
+  return rest ? [] : out;
+}
+function pinyinScore(w, q) {
+  const a = analysePinyin(q), b = analysePinyin(w.pinyin);
+  if (!a.base || /[^a-zü\s1-5'āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i.test(q)) return 0;
+  const tonesOk = !a.tones || b.tones.startsWith(a.tones);
+  if (b.base === a.base) return tonesOk ? 90 : 40;
+  const sy = syllables(w);
+  if (a.base.length >= 3 && b.base.startsWith(a.base)) {
+    // a start that stops mid-syllable ("che" → chènshān) is likely still being typed: rank it lower
+    let n = 0; const ends = sy.map((s) => (n += s.base.length));
+    const whole = !sy.length || ends.includes(a.base.length);
+    return tonesOk ? (whole ? 60 : 30) : 15;
+  }
+  // whole syllables inside the word: "hang" finds 银行 yínháng, not 长城 chángchéng
+  for (let i = 0; i < sy.length; i++) {
+    let base = "", tones = "";
+    for (let k = i; k < sy.length && base.length < a.base.length; k++) { base += sy[k].base; tones += sy[k].tones; }
+    if (base === a.base) return !a.tones || tones.startsWith(a.tones) ? 45 : 15;
+  }
+  return 0;
+}
+function hanziScore(w, q) {
+  const qh = chars(q).join(""); if (!qh) return 0;
+  return w.hanzi === qh ? 100 : w.hanzi.startsWith(qh) ? 80 : w.hanzi.includes(qh) ? 60 : 0;
+}
+function searchWords(q) {
+  q = q.trim();
+  const ws = allWords();
+  const byPinyin = (x, y) => analysePinyin(x.pinyin).base.localeCompare(analysePinyin(y.pinyin).base) || x.pinyin.localeCompare(y.pinyin);
+  if (!q) return ws.slice().sort(byPinyin).map((w) => ({ w, s: 0 }));
+  const han = chars(q).length > 0;
+  return ws.map((w) => ({ w, s: han ? hanziScore(w, q) : Math.max(englishScore(w, q), pinyinScore(w, q)) }))
+    .filter((r) => r.s > 0)
+    .sort((x, y) => y.s - x.s || [...x.w.hanzi].length - [...y.w.hanzi].length || byPinyin(x.w, y.w));
+}
+function vocabItem(w, fmap) {
+  const fs = fmap.get(w.hanzi) || [];
+  return `<button class="witem" data-open="${esc(w.hanzi)}"><span class="han">${esc(w.hanzi)}</span>
+    <span class="info"><div>${esc(w.pinyin)}</div><div class="en">${esc(w.en)}</div>
+    <div class="vfolders">${fs.map((f) => `<span>${esc(f)}</span>`).join("")}</div></span>${dots(w.hanzi)}</button>`;
+}
+function viewVocab(app) {
+  const q = S.vocabQuery || "";
+  const fmap = new Map();
+  for (const e of folderEntries()) { if (!fmap.has(e.hanzi)) fmap.set(e.hanzi, []); if (!fmap.get(e.hanzi).includes(e.folder)) fmap.get(e.hanzi).push(e.folder); }
+  app.innerHTML = `<section class="block">
+    <div class="spread"><h1 class="pix" style="font-size:34px">VOCABULARY</h1><span class="muted">${allWords().length} words</span></div>
+    <input type="search" class="search" id="vq" placeholder="Look up 字, pinyin or English" value="${esc(q)}" aria-label="Look up a word" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div id="vres"></div></section>`;
+  const out = $("#vres", app);
+  const show = () => {
+    const rs = searchWords(S.vocabQuery || "");
+    if (!rs.length) { out.innerHTML = `<p class="muted" style="margin:0">No word matches “${esc(S.vocabQuery)}”.</p>`; return; }
+    if ((S.vocabQuery || "").trim()) {
+      out.innerHTML = `<div class="eyebrow">${rs.length} result${rs.length === 1 ? "" : "s"}</div><div class="missed">${rs.map((r) => vocabItem(r.w, fmap)).join("")}</div>`;
+      return;
+    }
+    const groups = new Map();
+    for (const { w } of rs) { const L = (analysePinyin(w.pinyin).base[0] || "#").toUpperCase(); if (!groups.has(L)) groups.set(L, []); groups.get(L).push(w); }
+    out.innerHTML = [...groups].map(([L, ws]) => `<div class="vgroup"><div class="vletter pix">${esc(L)}</div><div class="missed">${ws.map((w) => vocabItem(w, fmap)).join("")}</div></div>`).join("");
+  };
+  const inp = $("#vq", app);
+  inp.oninput = () => { S.vocabQuery = inp.value; show(); };
+  show();
 }
 
 /* ---------- global events ---------- */
