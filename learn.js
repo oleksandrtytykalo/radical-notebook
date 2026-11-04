@@ -164,61 +164,117 @@ function viewLearnSession(app) {
     bindLearnOpts(app, st);
   }
 }
-/* ----- writing pad: watch the strokes, then write the character as often as you like ----- */
+/* ----- writing pad: watch the strokes, then write the character as often as you like -----
+   Every clean write builds a combo. Missing one stroke 3 times breaks it. From ×3 the outline
+   switches off (you write from memory) until the combo breaks. Combos ×1–5, ×10, ×15 and ×20
+   each have their own reward; the rest reuse a light one. Rewards animate only transform and
+   opacity on a few dozen nodes that are removed afterwards, so they stay cheap. */
+const COMBO_FX = { 1: "好", 2: "好", 3: "棒", 4: "妙", 5: "强", 10: "十连", 15: "十五", 20: "大师" };
+const OUTLINE_LOCK = 3;
 function writePadHTML(cs) {
   return `<div class="writepad">
-    <div class="spread"><div class="eyebrow">写 · Write it</div><span class="pix wcount" id="wcount" aria-live="polite">×0</span></div>
+    <div class="spread"><div class="eyebrow">写 · Write it</div>
+      <span class="wcombo" id="wcombo" hidden aria-live="polite"><b class="pix" id="wcount">×0</b><span>combo</span></span></div>
     ${cs.length > 1 ? `<div class="row" id="wtabs">${cs.map((c, i) => `<button class="chip han wtab" data-wc="${i}" aria-pressed="${i === 0}">${esc(c)}</button>`).join("")}</div>` : ""}
     <div class="grid-box" id="wgb">${GUIDES}<div class="hw" id="whw"></div><div class="wreward" id="wrw" hidden></div></div>
     <div class="row" style="justify-content:center"><button class="btn ghost" id="wdemo">▶ Watch strokes</button><button class="btn ghost" id="woutline" aria-pressed="true">Outline: on</button></div>
-    <p class="muted" style="margin:0;font-size:12px;text-align:center">Trace the grey outline first, then switch it off and write from memory. The grid clears after each one, so keep going.</p>
+    <p class="muted" style="margin:0;font-size:12px;text-align:center">Write it again and again: each clean one adds to your combo. At ×${OUTLINE_LOCK} the outline goes away until you miss a stroke 3 times.</p>
   </div>`;
 }
+// Particles flying out from the centre: n squares on rings of radius r
+const burst = (n, r, cls = "") => Array.from({ length: n }, (_, k) => {
+  const a = (k / n) * Math.PI * 2, d = r + (k % 3) * 22;
+  return `<i class="${cls}" style="--dx:${Math.round(Math.cos(a) * d)}px;--dy:${Math.round(Math.sin(a) * d)}px"></i>`;
+}).join("");
+function comboFX(n, perfect) {
+  const key = COMBO_FX[n] ? n : n > 20 ? "max" : "n";
+  const word = COMBO_FX[n] || (n > 20 ? "大师" : "好");
+  const tag = `<span class="wtag pix">×${n}${perfect ? " · PERFECT" : ""}</span>`;
+  const stamp = `<span class="wstamp han">${word}</span>`;
+  const extra = {
+    1: burst(8, 80),
+    2: `<b class="ring"></b><b class="ring r2"></b>` + burst(8, 90),
+    3: burst(12, 90) + `<em class="ribbon pix">OUTLINE OFF</em>`,
+    4: `<u class="flash"></u>` + burst(12, 100),
+    5: `<b class="frame"></b>` + burst(16, 100),
+    10: `<u class="checker"></u><strong class="big pix">×10</strong>` + burst(16, 110),
+    15: `<u class="flash"></u>` + Array.from({ length: 18 }, (_, k) => `<i class="rain" style="--x:${(k * 37) % 100}%;--d:${(k % 6) * 60}ms"></i>`).join(""),
+    20: `<u class="scan"></u><b class="frame"></b><b class="ring"></b><b class="ring r2"></b>` + burst(24, 110),
+    max: `<b class="frame"></b>` + burst(16, 110),
+    n: burst(10, 90),
+  }[key];
+  return { html: `<div class="fx fx-${key}">${extra}${stamp}${tag}</div>`, long: key === 10 || key === 15 || key === 20 };
+}
 function bindWritePad(app, cs) {
-  const gb = $("#wgb", app), hw = $("#whw", app), rw = $("#wrw", app);
-  const pad = { idx: 0, outline: true, count: 0, writer: null, mistakes: 0 };
+  const gb = $("#wgb", app), hw = $("#whw", app), rw = $("#wrw", app), ob = $("#woutline", app);
+  const comboEl = $("#wcombo", app), countEl = $("#wcount", app);
+  const pad = { idx: 0, outline: true, combo: 0, best: 0, total: 0, writer: null, mistakes: 0, broke: false };
   const alive = () => document.body.contains(gb);
+  const locked = () => pad.combo >= OUTLINE_LOCK;
+  const applyOutline = () => {
+    const on = pad.outline && !locked();
+    if (pad.writer) on ? pad.writer.showOutline() : pad.writer.hideOutline();
+    ob.disabled = locked();
+    ob.textContent = locked() ? `Outline off · ×${OUTLINE_LOCK}+ combo` : `Outline: ${on ? "on" : "off"}`;
+    ob.setAttribute("aria-pressed", on);
+  };
+  const showCombo = () => {
+    countEl.textContent = `×${pad.combo}`;
+    comboEl.hidden = false; comboEl.classList.remove("drop", "bump"); void comboEl.offsetWidth; comboEl.classList.add("bump");
+  };
+  // Three misses on one stroke: the combo drops away and the outline comes back
+  const breakCombo = () => {
+    pad.broke = true;
+    if (!pad.combo) return;
+    pad.combo = 0; pad.outline = true;
+    comboEl.classList.remove("bump"); void comboEl.offsetWidth; comboEl.classList.add("drop");
+    setTimeout(() => { if (!pad.combo) comboEl.hidden = true; }, 450);
+    applyOutline();
+  };
   const quiz = () => {
-    pad.mistakes = 0;
-    pad.writer.quiz({ leniency: 1.2, showHintAfterMisses: 3, onMistake: () => pad.mistakes++, onComplete: () => reward(pad.mistakes === 0) });
+    pad.mistakes = 0; pad.broke = false;
+    pad.writer.quiz({
+      leniency: 1.2, showHintAfterMisses: 3,
+      onMistake: (d) => { pad.mistakes++; if (d.mistakesOnStroke >= 3 && !pad.broke) breakCombo(); },
+      onComplete: () => reward(pad.mistakes === 0),
+    });
   };
   const start = (demo = false) => {
     if (!alive()) return;
     hw.innerHTML = "";
-    pad.writer = makeWriter(hw, cs[pad.idx], { showCharacter: false, showOutline: pad.outline });
+    pad.writer = makeWriter(hw, cs[pad.idx], { showCharacter: false, showOutline: pad.outline && !locked() });
     if (!pad.writer) return;
     if (demo) watch(); else quiz();
   };
   const watch = () => {
     const w = pad.writer; w.cancelQuiz();
     w.showCharacter();
-    w.animateCharacter({ onComplete: () => { if (!alive() || w !== pad.writer) return; setTimeout(() => { w.hideCharacter(); quiz(); }, 350); } });
+    w.animateCharacter({ onComplete: () => { if (!alive() || w !== pad.writer) return; setTimeout(() => { w.hideCharacter(); if (locked()) w.hideOutline(); quiz(); }, 350); } });
   };
-  // A finished character: stamp, burst, count, then a clean grid for the next go
   const reward = (perfect) => {
-    pad.count++;
-    const cnt = $("#wcount", app); cnt.textContent = `×${pad.count}`; cnt.classList.remove("bump"); void cnt.offsetWidth; cnt.classList.add("bump");
-    rw.innerHTML = `<span class="wstamp han">${perfect ? "完美" : "好"}</span>` +
-      Array.from({ length: 12 }, (_, k) => { const a = (k / 12) * Math.PI * 2, r = 90 + (k % 3) * 25; return `<i style="--dx:${Math.round(Math.cos(a) * r)}px;--dy:${Math.round(Math.sin(a) * r)}px"></i>`; }).join("");
-    rw.hidden = false; gb.classList.remove("win"); void gb.offsetWidth; gb.classList.add("win");
-    if (pad.count === 1) speak(cs.join(""));
+    pad.total++;
+    let fx;
+    if (pad.broke) fx = { html: `<div class="fx fx-plain"><span class="wstamp han">好</span></div>`, long: false }; // finished, but the combo was lost on the way
+    else {
+      pad.combo++; pad.best = Math.max(pad.best, pad.combo);
+      showCombo();
+      fx = comboFX(pad.combo, perfect);
+    }
+    rw.innerHTML = fx.html; rw.hidden = false;
+    if (pad.total === 1) speak(cs.join(""));
     setTimeout(() => {
       if (!alive()) return;
-      rw.hidden = true; gb.classList.remove("win");
-      if (cs.length > 1) { pad.idx = (pad.idx + 1) % cs.length; syncTabs(); } // words of several characters: move along, then loop
+      rw.hidden = true; rw.innerHTML = ""; // drop the particles so nothing lingers
+      if (cs.length > 1) { pad.idx = (pad.idx + 1) % cs.length; syncTabs(); } // several characters: move along, then loop
       start();
-    }, 1100);
+      applyOutline();
+    }, fx.long ? 1500 : 1050);
   };
   const syncTabs = () => $$("[data-wc]", app).forEach((b) => b.setAttribute("aria-pressed", +b.dataset.wc === pad.idx));
   const tabs = $("#wtabs", app);
   if (tabs) tabs.onclick = (e) => { const b = e.target.closest("[data-wc]"); if (!b) return; pad.idx = +b.dataset.wc; syncTabs(); start(true); };
   $("#wdemo", app).onclick = () => pad.writer && watch();
-  const ob = $("#woutline", app);
-  ob.onclick = () => {
-    pad.outline = !pad.outline;
-    ob.textContent = `Outline: ${pad.outline ? "on" : "off"}`; ob.setAttribute("aria-pressed", pad.outline);
-    if (pad.outline) pad.writer?.showOutline(); else pad.writer?.hideOutline();
-  };
+  ob.onclick = () => { if (locked()) return; pad.outline = !pad.outline; applyOutline(); };
   start(true); // first show how it's written, then hand over the brush
 }
 function renderStep() { viewLearnSession($("#app")); window.scrollTo(0, 0); }
