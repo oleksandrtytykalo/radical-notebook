@@ -25,15 +25,23 @@ function learnIslands() {
 function currentLearnIsland(list) {
   return list.find((i) => i.name === settings().learnIsland) || list.find((i) => !i.side && i.fresh.length) || list[0];
 }
+// What to learn from: a single folder of the island, or the whole island
+function learnScope(isl, folder = settings().learnFolder) {
+  const f = isl.folders.find(([name]) => name === folder);
+  const words = f ? uniqueWords(f[1]) : isl.words;
+  return { folder: f ? f[0] : "", label: f ? folderLabel(isl, f[0]) : isl.name, words, fresh: words.filter((w) => !isMet(w.hanzi)), due: words.filter((w) => isDue(w.hanzi)) };
+}
+const folderLabel = (isl, f) => (isl.prefix && f.startsWith(isl.prefix) ? f.slice(isl.prefix.length) : f);
 
 /* ----- the Learn page (third side of the Study tab) ----- */
 function viewLearn(app) {
   const list = learnIslands();
   const cur = currentLearnIsland(list);
+  const sc = learnScope(cur);
   const totalNew = allWords().filter((w) => !isMet(w.hanzi)).length; // words on two islands count once
-  const camps = Math.ceil(cur.words.length / CAMP_SIZE);
-  const met = cur.words.length - cur.fresh.length;
-  const next = cur.fresh.slice(0, CAMP_SIZE);
+  const camps = Math.ceil(sc.words.length / CAMP_SIZE);
+  const met = sc.words.length - sc.fresh.length;
+  const next = sc.fresh.slice(0, CAMP_SIZE);
   const lv = islandLevel(cur.words);
   app.innerHTML = trackSwitch() + `
   <section class="block">
@@ -45,16 +53,20 @@ function viewLearn(app) {
   <section class="block">
     <div class="camp tone-${cur.tone}">
       <div class="spread"><div><div class="eyebrow">${cur.side ? "Side island" : "Island"} · LV ${lv.lv} ${LEVELS[lv.lv].en}</div><h2 class="pix" style="font-size:32px">${esc(cur.name.toUpperCase())}</h2></div>
-        <span class="pix" style="font-size:26px">${met}/${cur.words.length}</span></div>
-      <div><div class="eyebrow" style="margin-bottom:6px">Camps · ${CAMP_SIZE} words each</div>
+        <span class="pix" style="font-size:26px">${met}/${sc.words.length}</span></div>
+      <div class="row" id="lfolders">
+        <button class="chip" data-lfolder="" aria-pressed="${!sc.folder}">Whole island<span class="n">${cur.fresh.length ? cur.fresh.length + " new" : "✓"}</span></button>
+        ${cur.folders.map(([f, ws]) => { const n = uniqueWords(ws).filter((w) => !isMet(w.hanzi)).length; return `<button class="chip" data-lfolder="${esc(f)}" aria-pressed="${sc.folder === f}">${esc(folderLabel(cur, f))}<span class="n">${n ? n + " new" : "✓"}</span></button>`; }).join("")}
+      </div>
+      <div><div class="eyebrow" style="margin-bottom:6px">${sc.folder ? esc(sc.label) + " · " : ""}Camps · ${CAMP_SIZE} words each</div>
         <div class="camps" aria-label="${Math.floor(met / CAMP_SIZE)} of ${camps} camps set up">${Array.from({ length: camps }, (_, k) => {
-          const ws = cur.words.slice(k * CAMP_SIZE, (k + 1) * CAMP_SIZE); const m = ws.filter((w) => isMet(w.hanzi)).length;
+          const ws = sc.words.slice(k * CAMP_SIZE, (k + 1) * CAMP_SIZE); const m = ws.filter((w) => isMet(w.hanzi)).length;
           return `<i class="${m === ws.length ? "on" : m ? "part" : ""}" title="Camp ${k + 1}: ${esc(ws.map((w) => w.hanzi).join(" "))}"></i>`;
         }).join("")}</div></div>
-      ${next.length ? `<div><div class="eyebrow" style="margin-bottom:6px">Next camp</div><div class="next-camp">${next.map((w) => `<span class="han">${esc(w.hanzi)}</span>`).join("")}</div></div>` : `<p style="margin:0">Every word on this island has been met. Keep it fresh with reviews and the Words games.</p>`}
+      ${next.length ? `<div><div class="eyebrow" style="margin-bottom:6px">Next camp</div><div class="next-camp">${next.map((w) => `<span class="han">${esc(w.hanzi)}</span>`).join("")}</div></div>` : `<p style="margin:0">Every word ${sc.folder ? "in this folder" : "on this island"} has been met. Keep it fresh with reviews and the Words games.</p>`}
       <div class="actions" style="margin-top:4px">
         ${next.length ? `<button class="btn solid" id="learn-go">Learn ${next.length} new word${next.length === 1 ? "" : "s"} →</button>` : ""}
-        ${cur.due.length ? `<button class="btn" id="review-go">Review ${Math.min(10, cur.due.length)} due</button>` : ""}
+        ${sc.due.length ? `<button class="btn" id="review-go">Review ${Math.min(10, sc.due.length)} due</button>` : ""}
       </div>
     </div>
   </section>
@@ -72,9 +84,10 @@ function viewLearn(app) {
     </div></details>
   </section>`;
   bindTrack(app);
-  $("#lisles", app).onclick = (e) => { const b = e.target.closest("[data-lisle]"); if (!b) return; settings().learnIsland = b.dataset.lisle; Store.save(); render(); };
-  const lg = $("#learn-go", app); if (lg) lg.onclick = () => startLearn(cur.name, "learn");
-  const rg = $("#review-go", app); if (rg) rg.onclick = () => startLearn(cur.name, "review");
+  $("#lisles", app).onclick = (e) => { const b = e.target.closest("[data-lisle]"); if (!b) return; settings().learnIsland = b.dataset.lisle; settings().learnFolder = ""; Store.save(); render(); };
+  $("#lfolders", app).onclick = (e) => { const b = e.target.closest("[data-lfolder]"); if (!b) return; settings().learnFolder = b.dataset.lfolder; Store.save(); render(); };
+  const lg = $("#learn-go", app); if (lg) lg.onclick = () => startLearn(cur.name, "learn", sc.folder);
+  const rg = $("#review-go", app); if (rg) rg.onclick = () => startLearn(cur.name, "review", sc.folder);
 }
 
 /* ----- a session ----- */
@@ -90,12 +103,13 @@ function learnSteps(words) {
   shuffle(words).forEach((w, k) => steps.push({ t: k % 2 && toneVariants(w.pinyin).length ? "tone" : "listen", w }));
   return steps;
 }
-function startLearn(islandName, mode) {
+function startLearn(islandName, mode, folder = "") {
   const isl = learnIslands().find((i) => i.name === islandName); if (!isl) return;
-  const words = mode === "learn" ? isl.fresh.slice(0, CAMP_SIZE) : isl.due.sort((a, b) => dueAt(a.hanzi) - dueAt(b.hanzi)).slice(0, 10);
+  const sc = learnScope(isl, folder);
+  const words = mode === "learn" ? sc.fresh.slice(0, CAMP_SIZE) : sc.due.sort((a, b) => dueAt(a.hanzi) - dueAt(b.hanzi)).slice(0, 10);
   if (!words.length) return toast(mode === "learn" ? "No new words left here." : "Nothing due right now.");
   const steps = mode === "learn" ? learnSteps(words) : shuffle(words).map((w) => ({ t: Math.random() < 0.5 ? "rec" : "recall", w }));
-  S.learn = { island: isl, mode, words, steps, i: 0, misses: {}, graded: new Set(), requeued: {}, before: islandLevel(isl.words), done: false };
+  S.learn = { island: isl, folder: sc.folder, label: sc.label, mode, words, steps, i: 0, misses: {}, graded: new Set(), requeued: {}, before: islandLevel(isl.words), done: false };
   go("learn");
   renderStep();
 }
@@ -126,6 +140,7 @@ function viewLearnSession(app) {
         <div class="big-han">${esc(st.w.hanzi)}</div><div class="big-py">${esc(st.w.pinyin)}</div><div class="big-en">${esc(st.w.en)}</div>
         ${speakBtn(st.w.hanzi)}</div>
       <div class="meet-parts">${cs.map((c) => CHARS[c] ? `<div class="meet-char">${formulaHTML(c, false)}<p class="story">${esc(CHARS[c].story)}</p></div>` : "").join("")}</div>
+      ${window.HanziWriter ? writePadHTML(cs) : ""}
       <div class="actions"><button class="btn solid" id="lnext">Got it →</button></div>`;
   } else if (st.t === "match") {
     st.left ||= shuffle(L.words.map((w) => w.hanzi)); st.right ||= shuffle(L.words.map((w) => w.en)); st.paired ||= [];
@@ -142,12 +157,69 @@ function viewLearnSession(app) {
   }
   app.innerHTML = learnHead() + `<div id="lq">${body}</div>`;
   $("#lquit", app).onclick = () => { S.learn = null; go("study", null, false); };
-  if (st.t === "meet") { speak(st.w.hanzi); $("#lnext", app).onclick = nextStep; }
+  if (st.t === "meet") { speak(st.w.hanzi); $("#lnext", app).onclick = nextStep; if ($("#wgb", app)) bindWritePad(app, chars(st.w.hanzi).filter((c, i, a) => a.indexOf(c) === i)); }
   else if (st.t === "match") bindMatch(app, st);
   else {
     if (st.t === "listen") speak(st.w.hanzi);
     bindLearnOpts(app, st);
   }
+}
+/* ----- writing pad: watch the strokes, then write the character as often as you like ----- */
+function writePadHTML(cs) {
+  return `<div class="writepad">
+    <div class="spread"><div class="eyebrow">写 · Write it</div><span class="pix wcount" id="wcount" aria-live="polite">×0</span></div>
+    ${cs.length > 1 ? `<div class="row" id="wtabs">${cs.map((c, i) => `<button class="chip han wtab" data-wc="${i}" aria-pressed="${i === 0}">${esc(c)}</button>`).join("")}</div>` : ""}
+    <div class="grid-box" id="wgb">${GUIDES}<div class="hw" id="whw"></div><div class="wreward" id="wrw" hidden></div></div>
+    <div class="row" style="justify-content:center"><button class="btn ghost" id="wdemo">▶ Watch strokes</button><button class="btn ghost" id="woutline" aria-pressed="true">Outline: on</button></div>
+    <p class="muted" style="margin:0;font-size:12px;text-align:center">Trace the grey outline first, then switch it off and write from memory. The grid clears after each one, so keep going.</p>
+  </div>`;
+}
+function bindWritePad(app, cs) {
+  const gb = $("#wgb", app), hw = $("#whw", app), rw = $("#wrw", app);
+  const pad = { idx: 0, outline: true, count: 0, writer: null, mistakes: 0 };
+  const alive = () => document.body.contains(gb);
+  const quiz = () => {
+    pad.mistakes = 0;
+    pad.writer.quiz({ leniency: 1.2, showHintAfterMisses: 3, onMistake: () => pad.mistakes++, onComplete: () => reward(pad.mistakes === 0) });
+  };
+  const start = (demo = false) => {
+    if (!alive()) return;
+    hw.innerHTML = "";
+    pad.writer = makeWriter(hw, cs[pad.idx], { showCharacter: false, showOutline: pad.outline });
+    if (!pad.writer) return;
+    if (demo) watch(); else quiz();
+  };
+  const watch = () => {
+    const w = pad.writer; w.cancelQuiz();
+    w.showCharacter();
+    w.animateCharacter({ onComplete: () => { if (!alive() || w !== pad.writer) return; setTimeout(() => { w.hideCharacter(); quiz(); }, 350); } });
+  };
+  // A finished character: stamp, burst, count, then a clean grid for the next go
+  const reward = (perfect) => {
+    pad.count++;
+    const cnt = $("#wcount", app); cnt.textContent = `×${pad.count}`; cnt.classList.remove("bump"); void cnt.offsetWidth; cnt.classList.add("bump");
+    rw.innerHTML = `<span class="wstamp han">${perfect ? "完美" : "好"}</span>` +
+      Array.from({ length: 12 }, (_, k) => { const a = (k / 12) * Math.PI * 2, r = 90 + (k % 3) * 25; return `<i style="--dx:${Math.round(Math.cos(a) * r)}px;--dy:${Math.round(Math.sin(a) * r)}px"></i>`; }).join("");
+    rw.hidden = false; gb.classList.remove("win"); void gb.offsetWidth; gb.classList.add("win");
+    if (pad.count === 1) speak(cs.join(""));
+    setTimeout(() => {
+      if (!alive()) return;
+      rw.hidden = true; gb.classList.remove("win");
+      if (cs.length > 1) { pad.idx = (pad.idx + 1) % cs.length; syncTabs(); } // words of several characters: move along, then loop
+      start();
+    }, 1100);
+  };
+  const syncTabs = () => $$("[data-wc]", app).forEach((b) => b.setAttribute("aria-pressed", +b.dataset.wc === pad.idx));
+  const tabs = $("#wtabs", app);
+  if (tabs) tabs.onclick = (e) => { const b = e.target.closest("[data-wc]"); if (!b) return; pad.idx = +b.dataset.wc; syncTabs(); start(true); };
+  $("#wdemo", app).onclick = () => pad.writer && watch();
+  const ob = $("#woutline", app);
+  ob.onclick = () => {
+    pad.outline = !pad.outline;
+    ob.textContent = `Outline: ${pad.outline ? "on" : "off"}`; ob.setAttribute("aria-pressed", pad.outline);
+    if (pad.outline) pad.writer?.showOutline(); else pad.writer?.hideOutline();
+  };
+  start(true); // first show how it's written, then hand over the brush
 }
 function renderStep() { viewLearnSession($("#app")); window.scrollTo(0, 0); }
 function nextStep() { const L = S.learn; L.i++; if (L.i >= L.steps.length) return finishLearn(); renderStep(); }
@@ -226,11 +298,11 @@ function renderLearnEnd(app) {
   const L = S.learn;
   const missTotal = Object.values(L.misses).reduce((a, b) => a + b, 0);
   const stars = missTotal === 0 ? 3 : missTotal <= 2 ? 2 : 1;
-  const fresh = learnIslands().find((i) => i.name === L.island.name);
+  const isl = learnIslands().find((i) => i.name === L.island.name); const fresh = isl && learnScope(isl, L.folder);
   const isLearn = L.mode === "learn";
   const right = isLearn ? 0 : L.words.filter((w) => !L.misses[w.hanzi]).length;
   app.innerHTML = `<section class="block">
-    <div class="eyebrow">${esc(L.island.name)} · ${isLearn ? "Camp" : "Review"}</div>
+    <div class="eyebrow">${esc(L.island.name)}${L.folder ? " · " + esc(L.label) : ""} · ${isLearn ? "Camp" : "Review"}</div>
     <h1 class="pix" style="font-size:44px">${isLearn ? "CAMP SET UP" : "REVIEW DONE"}</h1>
     ${isLearn ? `<div class="stars" aria-label="${stars} of 3 stars">${"★".repeat(stars)}${"☆".repeat(3 - stars)}</div>` : `<div class="row"><span class="score">${right}/${L.words.length}</span><span class="muted">remembered first time</span></div>`}
     <div class="camp-gain"><div class="spread"><span class="eyebrow">Island mastery</span><span class="pix">${L.before.pct}% → ${L.after.pct}%</span></div>
@@ -241,7 +313,7 @@ function renderLearnEnd(app) {
       ${isLearn && fresh?.fresh.length ? `<button class="btn solid" id="lmore">Next camp →</button>` : ""}
       <button class="btn ${isLearn && fresh?.fresh.length ? "" : "solid"}" id="lhome">Back</button></div>
   </section>`;
-  const more = $("#lmore", app); if (more) more.onclick = () => startLearn(L.island.name, "learn");
+  const more = $("#lmore", app); if (more) more.onclick = () => startLearn(L.island.name, "learn", L.folder);
   $("#lhome", app).onclick = () => { S.learn = null; go("study", null, false); };
 }
 

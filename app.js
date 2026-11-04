@@ -829,7 +829,7 @@ function viewLibrary(app) {
     const hits = ws.filter(match); if (!hits.length) return "";
     return `<details class="folder" ${q || fs.size === 1 ? "open" : ""}><summary><span class="name">${esc(isl.prefix && f.startsWith(isl.prefix) ? f.slice(isl.prefix.length) : f)}</span><span class="preview">${esc(folderPreview(ws))}</span><span class="muted count">${ws.length}</span></summary>
       <div class="wlist">${hits.map(wordItem).join("")}
-      <div style="padding:10px 14px;border-top:2px solid var(--ink)"><button class="btn" data-studyfolder="${esc(f)}">Study this folder</button></div></div></details>`;
+      <div class="row" style="padding:10px 14px;border-top:2px solid var(--ink)"><button class="btn" data-learnfolder="${esc(f)}" data-learnin="${esc(isl.name)}">学 Learn this folder</button><button class="btn" data-studyfolder="${esc(f)}">Study this folder</button></div></div></details>`;
   };
   const isls = islands().map((isl) => ({ ...isl, words: isl.folders.flatMap(([, ws]) => ws) }));
   isls.forEach((isl) => { isl.level = islandLevel(isl.words); isl.fresh = uniqueWords(isl.words).filter((w) => !isMet(w.hanzi)).length; });
@@ -863,9 +863,10 @@ function viewLibrary(app) {
     <div class="islands" id="flist">${blocks}</div></section>`;
   const inp = $("#lq", app);
   inp.oninput = () => { S.libQuery = inp.value; const pos = inp.selectionStart; render(); const n = $("#lq"); n.focus(); n.setSelectionRange(pos, pos); };
-  $$("[data-studyfolder]", app).forEach((b) => (b.onclick = () => { settings().scope = [b.dataset.studyfolder]; Store.save(); go("study"); }));
+  $$("[data-studyfolder]", app).forEach((b) => (b.onclick = () => { settings().scope = [b.dataset.studyfolder]; settings().track = "words"; Store.save(); go("study"); }));
+  $$("[data-learnfolder]", app).forEach((b) => (b.onclick = () => { Object.assign(settings(), { learnIsland: b.dataset.learnin, learnFolder: b.dataset.learnfolder, track: "learn" }); Store.save(); go("study"); }));
   $$("[data-studyisland]", app).forEach((b) => (b.onclick = () => { settings().scope = isls[+b.dataset.studyisland].folders.map(([f]) => f); settings().track = "words"; Store.save(); go("study"); }));
-  $$("[data-learnisland]", app).forEach((b) => (b.onclick = () => { settings().learnIsland = isls[+b.dataset.learnisland].name; settings().track = "learn"; Store.save(); go("study"); }));
+  $$("[data-learnisland]", app).forEach((b) => (b.onclick = () => { settings().learnIsland = isls[+b.dataset.learnisland].name; settings().learnFolder = ""; settings().track = "learn"; Store.save(); go("study"); }));
 }
 
 function viewDetail(app) {
