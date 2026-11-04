@@ -93,35 +93,6 @@ function roundKinds() {
   return ms.length ? ms : Object.keys(ROUNDS);
 }
 
-/* ----- sentence audio: every word's recording in a row, silence trimmed ----- */
-function tokClips(t) {
-  let rec = recordingFor(t);
-  if (!rec && SENT_EXTRA[t]) { const a = analysePinyin(SENT_EXTRA[t].pinyin); rec = ["syl", [a.base.replace(/ü/g, "v") + (a.tones || 1)]]; }
-  if (!rec) return null;
-  return rec[0] === "word" ? [`audio/w/${rec[1]}.mp3`] : rec[1].map((n) => `audio/s/${n}.mp3`);
-}
-async function playClips(groups) {
-  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") await audioCtx.resume();
-  const bufs = await Promise.all(groups.map((g) => Promise.all(g.map(trimmedBuffer))));
-  const slow = Math.max(0, (0.9 - (settings().rate || 0.8)) * 0.6);
-  let t = audioCtx.currentTime + 0.03;
-  for (const g of bufs) {
-    for (const b of g) {
-      const src = audioCtx.createBufferSource(); src.buffer = b; src.connect(audioCtx.destination);
-      src.start(t); playing.push(src); t += b.duration + (g.length > 1 ? slow : 0);
-    }
-    t += 0.08 + slow; // a breath between words
-  }
-}
-function speakSentence(s) {
-  stopAudio();
-  const groups = s.toks.map(tokClips);
-  const rec = groups.every(Boolean) ? () => playClips(groups).catch(() => ttsSpeak(s.text)) : null;
-  if (settings().voice === "default" || !rec) return ttsSpeak(s.text, rec);
-  rec();
-}
-
 /* ----- a run ----- */
 function startGame() {
   const pool = patternPool();
@@ -214,12 +185,11 @@ function viewSGame(app) {
     body = `<div class="prompt-card game-card"><span class="ask">${R.zh} · ${R.label}</span>${sentenceRuby(q.s, q.gap)}<span class="muted">${esc(q.s.en)}</span></div>
       <div class="options" id="opts">${q.opts.map((o, i) => `<button class="opt" data-opt="${i}"><span class="key">${i + 1}</span><span class="val"><span class="han" style="font-size:28px">${esc(o)}</span> <span class="muted" style="font-size:13px">${esc(tokInfo(o).pinyin)}</span></span></button>`).join("")}</div>`;
   } else {
-    body = `<div class="prompt-card game-card"><span class="ask">${R.zh} · ${R.label}</span>${sentenceRuby(q.s, -1, false)}<button class="speak" id="replay">▶ Listen</button></div>
+    body = `<div class="prompt-card game-card"><span class="ask">${R.zh} · ${R.label}</span>${sentenceRuby(q.s, -1, false)}</div>
       <div class="options" id="opts">${q.opts.map((o, i) => `<button class="opt" data-opt="${i}"><span class="key">${i + 1}</span><span class="val">${esc(o)}</span></button>`).join("")}</div>`;
   }
   app.innerHTML = gameHead() + `<div id="gq">${body}</div>`;
   bindHead(app);
-  const replay = $("#replay", app); if (replay) replay.onclick = () => speakSentence(q.s);
   if (q.tiles) bindTiles(app, q); else bindOpts(app, q);
 }
 function renderLine(app, q) {
@@ -298,17 +268,15 @@ function resolveRound(ok) {
     ${sentenceRuby(q.s)}<div>${esc(q.s.en)}</div>`;
   const act = document.createElement("div");
   act.className = "actions";
-  act.innerHTML = `<button class="btn" id="say">▶ Hear it</button><button class="btn solid" id="next">${last ? "Results →" : "Next →"}</button>`;
+  act.innerHTML = `<button class="btn solid" id="next">${last ? "Results →" : "Next →"}</button>`;
   $("#gq", app).append(fb, act);
-  $("#say", app).onclick = () => speakSentence(q.s);
   $("#next", app).onclick = nextRound;
   $("#next", app).focus({ preventScroll: true });
   fb.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  speakSentence(q.s);
 }
 function endGame(quit = false) {
   const g = S.game; if (!g || g.over) return;
-  g.over = true; g.quit = quit; stopAudio();
+  g.over = true; g.quit = quit;
   const best = sentData().best;
   g.prevBest = best[g.len] || 0;
   if (!quit && g.score > g.prevBest) best[g.len] = g.score;
@@ -331,10 +299,9 @@ function renderGameOver(app) {
     <div class="row muted" style="font-size:13px">${right}/${g.results.length} right (${pct}%) · best combo ×${mult(g.bestCombo)}</div>
     <div class="actions"><button class="btn solid" id="again">Play again</button><button class="btn" id="home">Back</button></div>
   </section>
-  ${missed.length ? `<section class="block"><div class="eyebrow">Practise these</div><div class="missed">${missed.map((s, i) => `<div class="sitem">${sentenceRuby(s)}<div class="spread"><span class="muted" style="font-size:13px">${esc(s.en)}</span><button class="speak" data-miss="${i}">▶</button></div></div>`).join("")}</div></section>` : ""}`;
+  ${missed.length ? `<section class="block"><div class="eyebrow">Practise these</div><div class="missed">${missed.map((s) => `<div class="sitem">${sentenceRuby(s)}<span class="muted" style="font-size:13px">${esc(s.en)}</span></div>`).join("")}</div></section>` : ""}`;
   $("#again", app).onclick = startGame;
   $("#home", app).onclick = () => go("study", null, false);
-  $$("[data-miss]", app).forEach((b) => (b.onclick = () => speakSentence(missed[+b.dataset.miss])));
 }
 
 /* ----- home: the Sentences side of the Study tab ----- */
