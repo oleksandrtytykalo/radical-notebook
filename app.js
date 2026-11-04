@@ -51,21 +51,54 @@ function toneVariants(p) {
   return [...out];
 }
 
-/* ---------- storage: this device, plus your claude.ai account when available ---------- */
+/* ---------- storage ----------
+   Four modes:
+   - account: logged in. Levels live in your Supabase row; this browser keeps a cached copy.
+   - guest:   accounts are set up but you're not logged in. Levels last for this tab (sessionStorage).
+   - local:   accounts not configured yet. Levels are saved in this browser, as before.
+   - claude:  running as a claude.ai artifact. Levels sync to your claude.ai account. */
 const LS_KEY = "radical-notebook-v1";
+const GUEST_KEY = LS_KEY + "-guest";
+const blank = () => ({ progress: {}, custom: [], sent: { best: {}, s: {} }, settings: { len: 20, rate: 0.8, scope: [] }, updatedAt: 0 });
+const readJSON = (store, key) => { try { const raw = store.getItem(key); return raw ? JSON.parse(raw) : null; } catch { return null; } };
+// Combine two saves without losing anything: per character the most recently practised entry wins
+function mergeData(a, b) {
+  if (!a) return b; if (!b) return a;
+  const progress = { ...a.progress };
+  for (const [h, p] of Object.entries(b.progress || {})) if (!progress[h] || (p.t || 0) > (progress[h].t || 0)) progress[h] = p;
+  const best = { ...(a.sent?.best || {}) };
+  for (const [k, v] of Object.entries(b.sent?.best || {})) best[k] = Math.max(best[k] || 0, v);
+  const newer = (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a;
+  const custom = newer.custom || []; // custom words can be deleted, so the newer list wins
+  return { ...a, ...b, progress, custom, sent: { ...(a.sent || {}), ...(b.sent || {}), best }, settings: { ...(a.settings || {}), ...(newer.settings || {}) }, updatedAt: Date.now() };
+}
 const Store = {
-  data: { progress: {}, custom: [], sent: { best: {}, s: {} }, settings: { len: 20, rate: 0.8, scope: [] }, updatedAt: 0 },
+  data: blank(),
+  mode: "local",
   ref: null,
   synced: false,
+  syncError: false,
   loadLocal() {
-    try { const raw = localStorage.getItem(LS_KEY); if (raw) this.adopt(JSON.parse(raw)); } catch {}
+    if (window.claude?.use) this.mode = "claude";
+    else if (!Cloud.ready()) this.mode = "local";
+    else this.mode = Cloud.restore() ? "account" : "guest";
+    const d = this.mode === "guest" ? readJSON(sessionStorage, GUEST_KEY) : readJSON(localStorage, LS_KEY);
+    if (d) this.adopt(d);
   },
   adopt(d) {
     this.data = { ...this.data, ...d, settings: { ...this.data.settings, ...(d.settings || {}) } };
   },
-  async connect() {
+  write() {
     try {
-      if (!window.claude?.use) return;
+      if (this.mode === "guest") sessionStorage.setItem(GUEST_KEY, JSON.stringify(this.data));
+      else localStorage.setItem(LS_KEY, JSON.stringify(this.data));
+    } catch {}
+  },
+  rerender() { if (S.view !== "session" && S.view !== "sgame" && S.view !== "learn") render(); },
+  async connect() {
+    if (this.mode === "account") return this.connectAccount();
+    if (this.mode !== "claude") return;
+    try {
       const [db, user] = await Promise.all([claude.use("db"), claude.use("user")]);
       if (!db || !user) return;
       const uid = await user.id();
@@ -74,25 +107,82 @@ const Store = {
       const snap = await this.ref.get();
       const remote = snap.exists ? snap.data() : null;
       if (remote && (remote.updatedAt || 0) > (this.data.updatedAt || 0)) {
-        this.adopt(remote);
-        try { localStorage.setItem(LS_KEY, JSON.stringify(this.data)); } catch {}
-        if (S.view !== "session" && S.view !== "sgame") render();
+        this.adopt(remote); this.write(); this.rerender();
       } else {
         await this.ref.set(this.data);
       }
       this.synced = true;
-
     } catch { this.ref = null; }
   },
+  async connectAccount() {
+    try {
+      await this.sync();
+      this.synced = true;
+    } catch (e) {
+      if (e.denied) { await Cloud.signOut(); this.toGuest(); toast("Your login expired. Please log in again."); }
+      else this.syncError = true;
+    }
+    this.rerender();
+  },
+  async login(name, password) {
+    await Cloud.signIn(name, password);
+    // Bring along anything practised before: your account, this browser's old save, and this tab's guest levels
+    const remote = await Cloud.pull();
+    const legacy = readJSON(localStorage, LS_KEY);
+    const guest = this.mode === "guest" ? this.data : null;
+    const merged = mergeData(mergeData(remote, legacy), guest) || blank();
+    this.data = blank(); this.adopt(merged);
+    this.mode = "account"; this.synced = true; this.syncError = false;
+    this.data.updatedAt = Date.now();
+    this.write();
+    try { sessionStorage.removeItem(GUEST_KEY); } catch {}
+    await Cloud.push(this.data);
+  },
+  async logout() {
+    clearTimeout(this.timer);
+    if (this.pending) { this.pending = false; await Cloud.push(this.data).catch(() => {}); }
+    await Cloud.signOut();
+    try { localStorage.removeItem(LS_KEY); } catch {} // it's safe in your account
+    this.toGuest();
+  },
+  toGuest() {
+    this.mode = "guest"; this.synced = false; this.data = blank();
+  },
   timer: null,
+  pending: false,
   save() {
     this.data.updatedAt = Date.now();
-    try { localStorage.setItem(LS_KEY, JSON.stringify(this.data)); } catch {}
-    if (!this.ref) return;
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.ref.set(this.data).catch(() => {}), 1200);
+    this.write();
+    if (this.mode === "claude" && this.ref) {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.ref.set(this.data).catch(() => {}), 1200);
+    } else if (this.mode === "account") {
+      this.pending = true;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.flush(), 1200);
+    }
+  },
+  // Pull what other devices saved, merge it in, push the result. Nothing practised anywhere gets lost.
+  async sync() {
+    const remote = await Cloud.pull();
+    if (remote) { const merged = mergeData(remote, this.data); this.data = blank(); this.adopt(merged); this.write(); }
+    await Cloud.push(this.data);
+    this.syncError = false;
+  },
+  flush(keepalive = false) {
+    if (!this.pending || this.mode !== "account") return;
+    this.pending = false;
+    // Closing the tab: no time to pull first, just send
+    const job = keepalive ? Cloud.push(this.data, true) : this.sync();
+    job.catch(() => { this.pending = true; this.syncError = true; });
   },
 };
+// Leaving or hiding the tab: send anything not yet synced
+// Coming back to the tab: pick up what you did on your other devices meanwhile
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { clearTimeout(Store.timer); Store.flush(true); return; }
+  if (Store.mode === "account" && Store.synced) Store.sync().then(() => Store.rerender(), () => { Store.syncError = true; });
+});
 const settings = () => Store.data.settings;
 
 /* ---------- data access ---------- */
@@ -345,7 +435,71 @@ function render() {
   const tab = { study: "study", session: "study", sgame: "study", learn: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
   const cur = $(`#tabs button[data-view="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
   const app = $("#app");
-  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession, sgame: viewSGame, learn: viewLearnSession })[S.view](app);
+  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession, sgame: viewSGame, learn: viewLearnSession, account: viewAccount })[S.view](app);
+  syncAcctBtn();
+}
+
+/* ---------- ACCOUNT: log in to keep your levels on every device ---------- */
+function saveNote() {
+  return {
+    account: `Logged in as ${esc(Cloud.user?.name || "")}: levels sync to your account on every device.${Store.syncError ? " (Offline right now, it will catch up.)" : ""}`,
+    guest: "Not logged in: levels last until you close this tab.",
+    claude: Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only.",
+    local: "Progress is saved in this browser only.",
+  }[Store.mode];
+}
+function syncAcctBtn() {
+  const b = $("#acct-btn"); if (!b) return;
+  b.hidden = !(Store.mode === "account" || Store.mode === "guest");
+  const on = Store.mode === "account";
+  b.setAttribute("aria-pressed", on);
+  b.title = on ? `Logged in as ${Cloud.user?.name || ""}` : "Log in";
+  b.setAttribute("aria-label", b.title);
+}
+function viewAccount(app) {
+  const learned = Object.values(Store.data.progress).filter((p) => p.b > 0).length;
+  if (Store.mode === "account") {
+    app.innerHTML = `<section class="block acct">
+      <div class="eyebrow">Account</div>
+      <h1 class="pix" style="margin:0">${esc(Cloud.user?.name || "")}</h1>
+      <p class="note">${saveNote()} ${learned} words with progress.</p>
+      <div class="row"><button class="btn" id="acct-back">Back to study</button><button class="btn ghost" id="logout">Log out</button></div>
+    </section>`;
+    $("#acct-back", app).onclick = () => go("study");
+    $("#logout", app).onclick = async (e) => {
+      e.target.disabled = true;
+      await Store.logout();
+      toast("Logged out. Practising as a guest."); go("study");
+    };
+    return;
+  }
+  if (Store.mode !== "guest") {
+    app.innerHTML = `<section class="block acct"><div class="eyebrow">Account</div><p class="note">${saveNote()} Logins aren't available here.</p></section>`;
+    return;
+  }
+  app.innerHTML = `<section class="block acct">
+    <div class="eyebrow">Log in</div>
+    <form id="login-form" class="acct-form" autocomplete="on">
+      <label class="field">Username<input type="text" id="lg-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+      <label class="field">Password<input type="password" id="lg-pass" name="password" autocomplete="current-password" required></label>
+      <p class="acct-err" id="lg-err" role="alert" hidden></p>
+      <button class="btn" type="submit" id="lg-go">Log in</button>
+    </form>
+    <p class="note">You can use the whole app without logging in; your levels then last until you close this tab. Log in to keep them on every device. You stay logged in until you log out.${learned ? ` Your ${learned} words from this tab come with you.` : ""}</p>
+  </section>`;
+  const f = $("#login-form", app), err = $("#lg-err", app), btn = $("#lg-go", app);
+  $("#lg-user", app).focus();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    err.hidden = true; btn.disabled = true; btn.textContent = "Logging in…";
+    try {
+      await Store.login($("#lg-user", app).value, $("#lg-pass", app).value);
+      toast(`Welcome back, ${Cloud.user.name}`); go("study");
+    } catch (x) {
+      err.textContent = x.message || "Login failed."; err.hidden = false;
+      btn.disabled = false; btn.textContent = "Log in";
+    }
+  };
 }
 
 /* ---------- STUDY (home) ---------- */
@@ -423,9 +577,10 @@ function viewStudy(app) {
         <select id="rate">${[[0.6, "Slow"], [0.8, "Learner"], [1, "Natural"]].map(([v, l]) => `<option value="${v}" ${st.rate === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <div class="field">Test voice<div class="row"><button class="speak" data-say="学生">▶ 学生</button><button class="speak" data-say="你好">▶ 你好</button></div></div>
     </div>
-    <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} Human recordings: native speakers from the audio-cmn project (CC BY-SA). Words without a recording are pieced together from single syllables, and sentences use the browser voice.</p>
+    <p class="note">${saveNote()}${Store.mode === "account" || Store.mode === "guest" ? ` <button class="linkish" data-goacct>${Store.mode === "account" ? "Account" : "Log in"} →</button>` : ""} Human recordings: native speakers from the audio-cmn project (CC BY-SA). Words without a recording are pieced together from single syllables, and sentences use the browser voice.</p>
   </section>`;
   bindTrack(app);
+  const ga = $("[data-goacct]", app); if (ga) ga.onclick = () => go("account");
   $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
   $("#voice", app).onchange = (e) => { st.voice = e.target.value; Store.save(); speak("学生"); };
 
@@ -1095,6 +1250,7 @@ document.addEventListener("click", (e) => {
 });
 $("#tabs").onclick = (e) => { const b = e.target.closest("[data-view]"); if (b) { S.history = []; go(b.dataset.view, null, false); } };
 $("#logo").onclick = () => { S.history = []; go("study", null, false); };
+$("#acct-btn").onclick = () => go("account");
 $("#theme-btn").onclick = () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;

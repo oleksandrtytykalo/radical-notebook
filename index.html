@@ -450,6 +450,12 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); }
 .sheet { border: 2px solid var(--ink); padding: 14px; display: grid; gap: 12px; box-shadow: var(--shadow); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } }
+.icon-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.linkish { border: 0; background: none; padding: 0; text-decoration: underline; font: inherit; color: inherit; }
+.acct { max-width: 420px; }
+.acct-form { display: grid; gap: 12px; }
+.acct-form input { border: 2px solid var(--ink); background: var(--paper); color: var(--ink); padding: 9px 10px; border-radius: 0; font: inherit; }
+.acct-err { margin: 0; border: 2px solid var(--ink); background: var(--ink); color: var(--paper); padding: 6px 10px; font-size: 13px; }
 .note { border-left: 4px solid var(--ink); padding: 4px 0 4px 12px; font-size: 13px; }
 kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; font-size: 11px; }
 .hide-sm { }
@@ -467,6 +473,7 @@ kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; 
       <button data-view="vocab">Vocabulary</button>
       <button data-view="radicals">Radicals</button>
     </nav>
+    <button class="icon-btn han" id="acct-btn" aria-label="Log in" title="Log in" hidden>人</button>
     <button class="icon-btn" id="theme-btn" aria-label="Invert colours" title="Invert colours">◐</button>
   </div>
 </header>
@@ -479,6 +486,8 @@ kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; 
 <script src="sentences.js" charset="utf-8"></script>
 <script src="game.js" charset="utf-8"></script>
 <script src="learn.js" charset="utf-8"></script>
+<script src="config.js" charset="utf-8"></script>
+<script src="auth.js" charset="utf-8"></script>
 <script src="app.js" charset="utf-8"></script>
 </body>
 </html>
