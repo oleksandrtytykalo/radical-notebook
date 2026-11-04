@@ -54,7 +54,7 @@ function toneVariants(p) {
 /* ---------- storage: this device, plus your claude.ai account when available ---------- */
 const LS_KEY = "radical-notebook-v1";
 const Store = {
-  data: { progress: {}, custom: [], settings: { len: 20, rate: 0.8, scope: [] }, updatedAt: 0 },
+  data: { progress: {}, custom: [], sent: { best: {}, s: {} }, settings: { len: 20, rate: 0.8, scope: [] }, updatedAt: 0 },
   ref: null,
   synced: false,
   loadLocal() {
@@ -76,12 +76,12 @@ const Store = {
       if (remote && (remote.updatedAt || 0) > (this.data.updatedAt || 0)) {
         this.adopt(remote);
         try { localStorage.setItem(LS_KEY, JSON.stringify(this.data)); } catch {}
-        if (S.view !== "session") render();
+        if (S.view !== "session" && S.view !== "sgame") render();
       } else {
         await this.ref.set(this.data);
       }
       this.synced = true;
-      if (S.view === "add") render();
+
     } catch { this.ref = null; }
   },
   timer: null,
@@ -234,10 +234,10 @@ function stopAudio() {
   playing = [];
   if ("speechSynthesis" in window) speechSynthesis.cancel();
 }
-// Decode a syllable and cut the silence around it, so pieced-together words flow
-function trimmedBuffer(name) {
-  if (!bufCache.has(name)) {
-    bufCache.set(name, fetch(`audio/s/${name}.mp3`).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+// Decode a recording and cut the silence around it, so pieced-together words and sentences flow
+function trimmedBuffer(url) {
+  if (!bufCache.has(url)) {
+    bufCache.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
       .then((b) => audioCtx.decodeAudioData(b)).then((buf) => {
         const d = buf.getChannelData(0); const th = 0.02; const pad = Math.round(buf.sampleRate * 0.015);
         let a = 0, z = d.length - 1;
@@ -247,15 +247,15 @@ function trimmedBuffer(name) {
         const out = audioCtx.createBuffer(buf.numberOfChannels, z - a, buf.sampleRate);
         for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(a, z), c);
         return out;
-      }).catch((e) => { bufCache.delete(name); throw e; }));
+      }).catch((e) => { bufCache.delete(url); throw e; }));
   }
-  return bufCache.get(name);
+  return bufCache.get(url);
 }
 // Speed for recordings: slower settings stretch the gaps between syllables, keeping the voice's pitch
 async function playSyllables(names) {
   audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") await audioCtx.resume();
-  const bufs = await Promise.all(names.map(trimmedBuffer));
+  const bufs = await Promise.all(names.map((n) => trimmedBuffer(`audio/s/${n}.mp3`)));
   const gap = names.length > 1 ? Math.max(0, (0.9 - (settings().rate || 0.8)) * 0.6) : 0;
   let t = audioCtx.currentTime + 0.03;
   for (const b of bufs) {
@@ -342,10 +342,10 @@ function back() { const [v, p] = S.history.pop() || ["study", null]; go(v, p, fa
 
 function render() {
   $$("#tabs button").forEach((b) => b.toggleAttribute("aria-current", false));
-  const tab = { study: "study", session: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
+  const tab = { study: "study", session: "study", sgame: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
   const cur = $(`#tabs button[data-view="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
   const app = $("#app");
-  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession })[S.view](app);
+  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession, sgame: viewSGame })[S.view](app);
 }
 
 /* ---------- STUDY (home) ---------- */
@@ -368,12 +368,13 @@ const MODES = [
 ];
 const modeSummary = (ms) => (ms.length ? ms.map((m) => MODES.find((x) => x[0] === m)[2]).join(" + ") : "Random mix");
 function viewStudy(app) {
+  if (settings().track === "sentences") return viewSentences(app);
   const fs = folders();
   const sc = liveScope();
   const n = scopeWords().length;
   const st = settings();
   const modes = (st.modes || []).filter((m) => MODES.some((x) => x[0] === m));
-  app.innerHTML = `
+  app.innerHTML = trackSwitch() + `
   <section class="block">
     <div class="spread"><h1 class="pix" style="font-size:34px">WHAT TO STUDY</h1><span class="muted">${n} word${n === 1 ? "" : "s"} selected</span></div>
     <div class="row" id="scope">
@@ -423,6 +424,7 @@ function viewStudy(app) {
     </div>
     <p class="note">${Store.synced ? "Progress syncs to your claude.ai account, so phone and laptop stay in step." : "Progress is saved in this browser only."} Human recordings: native speakers from the audio-cmn project (CC BY-SA). Words without a recording are pieced together from single syllables, and sentences use the browser voice.</p>
   </section>`;
+  bindTrack(app);
   $("#rate", app).onchange = (e) => { st.rate = +e.target.value; Store.save(); };
   $("#voice", app).onchange = (e) => { st.voice = e.target.value; Store.save(); speak("学生"); };
 
