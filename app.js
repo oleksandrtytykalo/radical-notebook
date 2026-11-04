@@ -456,13 +456,54 @@ function syncAcctBtn() {
   b.title = on ? `Logged in as ${Cloud.user?.name || ""}` : "Log in";
   b.setAttribute("aria-label", b.title);
 }
+// Account-wide level from every word you know, not one island: each mastery box is 1 point
+// (a word holds up to 5). Level n needs 5 × n(n+1)/2 points, so each level asks a little more.
+const ACCOUNT_TITLES = ["新手 Newcomer", "学生 Student", "旅人 Traveller", "探险家 Explorer", "学者 Scholar", "大师 Master", "宗师 Grandmaster"];
+function accountStats() {
+  const words = allWords();
+  const ps = Object.entries(Store.data.progress);
+  const pts = ps.reduce((a, [, p]) => a + (p.b || 0), 0);
+  const need = (n) => (5 * n * (n + 1)) / 2;
+  let lv = 0; while (pts >= need(lv + 1)) lv++;
+  const right = ps.reduce((a, [, p]) => a + (p.c || 0), 0) + Object.values(Store.data.sent?.s || {}).reduce((a, r) => a + (r.c || 0), 0);
+  const wrong = ps.reduce((a, [, p]) => a + (p.w || 0), 0) + Object.values(Store.data.sent?.s || {}).reduce((a, r) => a + (r.w || 0), 0);
+  const known = new Set(words.map((w) => w.hanzi));
+  const mine = ps.filter(([h]) => known.has(h));
+  return {
+    lv, pts, from: need(lv), to: need(lv + 1),
+    title: ACCOUNT_TITLES[Math.min(ACCOUNT_TITLES.length - 1, Math.floor(lv / 5))],
+    answered: right + wrong, acc: right + wrong ? Math.round((right / (right + wrong)) * 100) : 0,
+    met: mine.filter(([, p]) => p.c + p.w > 0 || p.b > 0).length,
+    mastered: mine.filter(([, p]) => p.b >= 5).length,
+    total: words.length,
+    mastery: words.length ? Math.round((mine.reduce((a, [, p]) => a + (p.b || 0), 0) / (5 * words.length)) * 100) : 0,
+  };
+}
+function statsHTML() {
+  const st = accountStats();
+  const fill = Math.round(((st.pts - st.from) / (st.to - st.from)) * 100);
+  return `<div class="acct-level">
+      <div class="acct-lv pix">LV ${st.lv}</div>
+      <div class="acct-lvinfo"><b class="han">${st.title}</b>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${fill}"><i style="width:${fill}%"></i></div>
+        <span class="muted">${st.pts - st.from} / ${st.to - st.from} points to LV ${st.lv + 1}</span></div>
+    </div>
+    <div class="acct-stats">
+      <div><b class="pix">${st.answered}</b><span>questions answered</span></div>
+      <div><b class="pix">${st.acc}%</b><span>accuracy</span></div>
+      <div><b class="pix">${st.met}<small>/${st.total}</small></b><span>words met</span></div>
+      <div><b class="pix">${st.mastered}</b><span>words mastered</span></div>
+    </div>
+    <p class="muted" style="margin:0;font-size:12px">Your level counts every word, across all islands: each correct answer moves a word up one box (5 boxes = mastered), and every box is a point. Overall mastery: ${st.mastery}% of all ${st.total} words.</p>`;
+}
 function viewAccount(app) {
   const learned = Object.values(Store.data.progress).filter((p) => p.b > 0).length;
   if (Store.mode === "account") {
     app.innerHTML = `<section class="block acct">
       <div class="eyebrow">Account</div>
       <h1 class="pix" style="margin:0">${esc(Cloud.user?.name || "")}</h1>
-      <p class="note">${saveNote()} ${learned} words with progress.</p>
+      ${statsHTML()}
+      <p class="note">${saveNote()}</p>
       <div class="row"><button class="btn" id="acct-back">Back to study</button><button class="btn ghost" id="logout">Log out</button></div>
     </section>`;
     $("#acct-back", app).onclick = () => go("study");
@@ -474,10 +515,14 @@ function viewAccount(app) {
     return;
   }
   if (Store.mode !== "guest") {
-    app.innerHTML = `<section class="block acct"><div class="eyebrow">Account</div><p class="note">${saveNote()} Logins aren't available here.</p></section>`;
+    app.innerHTML = `<section class="block acct"><div class="eyebrow">Progress</div>${statsHTML()}<p class="note">${saveNote()} Logins aren't available here.</p></section>`;
     return;
   }
   app.innerHTML = `<section class="block acct">
+    <div class="eyebrow">This session</div>
+    ${statsHTML()}
+  </section>
+  <section class="block acct">
     <div class="eyebrow">Log in</div>
     <form id="login-form" class="acct-form" autocomplete="on">
       <label class="field">Username<input type="text" id="lg-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
@@ -1250,7 +1295,7 @@ document.addEventListener("click", (e) => {
 });
 $("#tabs").onclick = (e) => { const b = e.target.closest("[data-view]"); if (b) { S.history = []; go(b.dataset.view, null, false); } };
 $("#logo").onclick = () => { S.history = []; go("study", null, false); };
-$("#acct-btn").onclick = () => go("account");
+$("#acct-btn").onclick = () => (S.view === "account" ? back() : go("account"));
 $("#theme-btn").onclick = () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
