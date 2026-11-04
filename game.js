@@ -306,8 +306,9 @@ function renderGameOver(app) {
 
 /* ----- home: the Sentences side of the Study tab ----- */
 function trackSwitch() {
-  const t = settings().track === "sentences" ? "sentences" : "words";
+  const t = ["sentences", "learn"].includes(settings().track) ? settings().track : "words";
   return `<div class="track" role="tablist" aria-label="Practice type">
+    <button role="tab" data-track="learn" aria-selected="${t === "learn"}"><span class="han">学</span>Learn</button>
     <button role="tab" data-track="words" aria-selected="${t === "words"}"><span class="han">词</span>Words</button>
     <button role="tab" data-track="sentences" aria-selected="${t === "sentences"}"><span class="han">句</span>Sentences</button></div>`;
 }

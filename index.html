@@ -99,11 +99,49 @@ label.field { display: grid; gap: 4px; font-size: 13px; }
 .start { width: 100%; padding: 14px; font-size: 14px; }
 
 /* words / sentences switch */
-.track { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--ink); box-shadow: var(--shadow); margin-top: 18px; }
+.track { display: grid; grid-template-columns: 1fr 1fr 1fr; border: 2px solid var(--ink); box-shadow: var(--shadow); margin-top: 18px; }
 .track button { border: 0; background: var(--paper); padding: 12px 10px; display: flex; align-items: center; justify-content: center; gap: 10px; text-transform: uppercase; letter-spacing: .1em; font-size: 13px; font-weight: 600; }
 .track button + button { border-left: 2px solid var(--ink); }
 .track button .han { font-size: 24px; line-height: 1; font-weight: 400; }
 .track button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+
+@media (max-width: 420px) { .track button { flex-direction: column; gap: 2px; padding: 8px 4px; font-size: 11px; } }
+
+/* learn: island picker, camp panel */
+.lisles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.lisle { border: 2px solid var(--ink); background: var(--paper); padding: 8px 10px; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; text-align: left; box-shadow: var(--shadow); }
+.lisle .swatch { grid-row: span 2; width: 38px; height: 38px; display: grid; place-items: center; font-size: 22px; border: 2px solid var(--ink); background: var(--tone); }
+.lisle .nm { font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.lisle .ct { font-size: 12px; color: var(--dim); }
+.lisle[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.lisle[aria-pressed="true"] .ct { color: inherit; opacity: .75; }
+.tone-1 { --tone: var(--tone-1); } .tone-2 { --tone: var(--tone-2); } .tone-3 { --tone: var(--tone-3); } .tone-4 { --tone: var(--tone-4); } .tone-5 { --tone: var(--tone-5); }
+.camp { border: 2px solid var(--ink); box-shadow: var(--shadow); padding: 16px; display: grid; gap: 14px; border-left: 14px solid var(--tone); }
+.camps { display: flex; flex-wrap: wrap; gap: 5px; }
+.camps i { width: 22px; height: 22px; border: 2px solid var(--ink); }
+.camps i.on { background: var(--ink); }
+.camps i.part { background: repeating-linear-gradient(45deg, var(--paper) 0 3px, var(--ink) 3px 5px); }
+.next-camp { display: flex; flex-wrap: wrap; gap: 8px; }
+.next-camp .han { font-size: 26px; border: 2px dashed var(--dim); padding: 2px 8px; color: var(--dim); }
+
+/* learn: session */
+.meet .big-han { font-size: clamp(72px, 22vw, 132px); }
+.meet-parts { display: grid; gap: 12px; margin-top: 16px; }
+.meet-char { border: 2px solid var(--ink); padding: 12px; display: grid; gap: 8px; }
+.meet-char .story { margin: 0; font-size: 13px; }
+.match { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.mcol { display: grid; gap: 10px; align-content: start; }
+.mtile { border: 2px solid var(--ink); background: var(--paper); box-shadow: 3px 3px 0 var(--ink); padding: 12px 10px; min-height: 58px; font-size: 14px; overflow-wrap: anywhere; transition: transform .06s, box-shadow .06s; }
+.mtile.han { font-size: 30px; padding: 6px 10px; }
+.mtile[aria-pressed="true"] { background: var(--ink); color: var(--paper); transform: translate(3px, 3px); box-shadow: none; }
+.mtile.done { visibility: hidden; }
+.mtile.shake { animation: shake .35s steps(4); background: repeating-linear-gradient(45deg, var(--paper) 0 5px, var(--shade) 5px 7px); }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+.camp-gain { border: 2px solid var(--ink); padding: 12px 14px; display: grid; gap: 8px; }
+.camp-gain .bar { height: 14px; border: 2px solid var(--ink); position: relative; }
+.camp-gain .bar i { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(90deg, var(--ink) 0 6px, transparent 6px 8px); }
+.camp-gain .bar b { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .mtile.shake { animation: none; } }
 
 /* sentence games: home */
 .slog { display: grid; grid-template-columns: repeat(auto-fill, minmax(14px, 1fr)); gap: 4px; }
@@ -385,6 +423,7 @@ kbd { font-family: var(--f-ui); border: 1.5px solid var(--ink); padding: 0 4px; 
 <script src="audio.js" charset="utf-8"></script>
 <script src="sentences.js" charset="utf-8"></script>
 <script src="game.js" charset="utf-8"></script>
+<script src="learn.js" charset="utf-8"></script>
 <script src="app.js" charset="utf-8"></script>
 </body>
 </html>

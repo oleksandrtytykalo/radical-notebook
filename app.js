@@ -342,10 +342,10 @@ function back() { const [v, p] = S.history.pop() || ["study", null]; go(v, p, fa
 
 function render() {
   $$("#tabs button").forEach((b) => b.toggleAttribute("aria-current", false));
-  const tab = { study: "study", session: "study", sgame: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
+  const tab = { study: "study", session: "study", sgame: "study", learn: "study", library: "library", vocab: "vocab", radicals: "radicals", part: "radicals" }[S.view];
   const cur = $(`#tabs button[data-view="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
   const app = $("#app");
-  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession, sgame: viewSGame })[S.view](app);
+  ({ study: viewStudy, library: viewLibrary, vocab: viewVocab, detail: viewDetail, radicals: viewRadicals, part: viewPart, session: viewSession, sgame: viewSGame, learn: viewLearnSession })[S.view](app);
 }
 
 /* ---------- STUDY (home) ---------- */
@@ -369,6 +369,7 @@ const MODES = [
 const modeSummary = (ms) => (ms.length ? ms.map((m) => MODES.find((x) => x[0] === m)[2]).join(" + ") : "Random mix");
 function viewStudy(app) {
   if (settings().track === "sentences") return viewSentences(app);
+  if (settings().track === "learn") return viewLearn(app);
   const fs = folders();
   const sc = liveScope();
   const n = scopeWords().length;
@@ -831,7 +832,7 @@ function viewLibrary(app) {
       <div style="padding:10px 14px;border-top:2px solid var(--ink)"><button class="btn" data-studyfolder="${esc(f)}">Study this folder</button></div></div></details>`;
   };
   const isls = islands().map((isl) => ({ ...isl, words: isl.folders.flatMap(([, ws]) => ws) }));
-  isls.forEach((isl) => (isl.level = islandLevel(isl.words)));
+  isls.forEach((isl) => { isl.level = islandLevel(isl.words); isl.fresh = uniqueWords(isl.words).filter((w) => !isMet(w.hanzi)).length; });
   const route = isls.filter((i) => !i.side);
   const here = route.find((i) => i.level.lv < 3) || route[route.length - 1];
   const blocks = isls.map((isl, n) => {
@@ -849,7 +850,7 @@ function viewLibrary(app) {
         <div class="island-progress"><div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemax="100" aria-label="${esc(isl.name)} mastery"><i style="width:${pct}%"></i>${next && next.at ? `<b style="left:${next.at}%"></b>` : ""}</div>
           <span>${pct}% mastered · ${goal}</span></div>
         <div class="island-folders">${body}</div>
-        <button class="island-study" data-studyisland="${n}">Study island →</button>
+        <div class="row"><button class="island-study" data-learnisland="${n}">学 Learn${isl.fresh ? ` · ${isl.fresh} new` : ""} →</button><button class="island-study" data-studyisland="${n}">Study island →</button></div>
       </section>`;
   }).join("");
   app.innerHTML = `<section class="block">
@@ -863,7 +864,8 @@ function viewLibrary(app) {
   const inp = $("#lq", app);
   inp.oninput = () => { S.libQuery = inp.value; const pos = inp.selectionStart; render(); const n = $("#lq"); n.focus(); n.setSelectionRange(pos, pos); };
   $$("[data-studyfolder]", app).forEach((b) => (b.onclick = () => { settings().scope = [b.dataset.studyfolder]; Store.save(); go("study"); }));
-  $$("[data-studyisland]", app).forEach((b) => (b.onclick = () => { settings().scope = isls[+b.dataset.studyisland].folders.map(([f]) => f); Store.save(); go("study"); }));
+  $$("[data-studyisland]", app).forEach((b) => (b.onclick = () => { settings().scope = isls[+b.dataset.studyisland].folders.map(([f]) => f); settings().track = "words"; Store.save(); go("study"); }));
+  $$("[data-learnisland]", app).forEach((b) => (b.onclick = () => { settings().learnIsland = isls[+b.dataset.learnisland].name; settings().track = "learn"; Store.save(); go("study"); }));
 }
 
 function viewDetail(app) {
