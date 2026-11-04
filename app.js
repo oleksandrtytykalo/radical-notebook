@@ -207,16 +207,29 @@ function loadVoices() {
 }
 if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
 
-function ttsSpeak(text) {
-  if (!("speechSynthesis" in window)) return toast("This browser has no speech voice.");
+// Some browsers (e.g. app-embedded ones) accept speech but never start it. If nothing starts
+// within a moment, run onSilent (play the recording instead) and say so once.
+let ttsWarned = false, ttsId = 0;
+function ttsSpeak(text, onSilent) {
+  const id = ++ttsId;
+  const silent = () => {
+    if (!ttsWarned) { ttsWarned = true; toast(onSilent ? "This browser's voice isn't working, so playing the recording instead." : "This browser has no working speech voice."); }
+    if (onSilent) onSilent();
+  };
+  if (!("speechSynthesis" in window)) return silent();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "zh-CN"; if (zhVoice) u.voice = zhVoice; u.rate = settings().rate || 0.8;
+  let started = false;
+  u.onstart = () => (started = true);
   speechSynthesis.speak(u);
+  setTimeout(() => { if (id === ttsId && !started && !u.ended) { speechSynthesis.cancel(); silent(); } }, 1200);
+  u.onend = () => (u.ended = true);
 }
 
 let audioCtx = null, playing = [];
 const bufCache = new Map();
 function stopAudio() {
+  ttsId++;
   playing.forEach((p) => { try { p.stop ? p.stop() : p.pause(); } catch {} });
   playing = [];
   if ("speechSynthesis" in window) speechSynthesis.cancel();
@@ -256,12 +269,15 @@ function playWord(name) {
   playing.push(a);
   return a.play();
 }
-function speak(text) {
-  stopAudio();
-  const rec = settings().voice === "default" ? null : recordingFor(text);
-  if (!rec) return ttsSpeak(text);
+function playRecording(rec, text) {
   const p = rec[0] === "word" ? playWord(rec[1]) : playSyllables(rec[1]);
   Promise.resolve(p).catch(() => ttsSpeak(text)); // offline or missing file: fall back to the browser voice
+}
+function speak(text) {
+  stopAudio();
+  const rec = recordingFor(text);
+  if (settings().voice === "default" || !rec) return ttsSpeak(text, rec && (() => playRecording(rec, text)));
+  playRecording(rec, text);
 }
 const speakBtn = (h, cls = "") => `<button class="speak ${cls}" data-say="${esc(h)}">▶ Play sound</button>`;
 
