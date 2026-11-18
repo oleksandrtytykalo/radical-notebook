@@ -153,6 +153,22 @@ const WORDS = [
     ["同校", "tóngxiào", "same school"], ["上海", "Shànghǎi", "Shanghai"], ["外滩", "Wàitān", "the Bund (Shanghai)"],
     ["豫园", "Yùyuán", "Yu Garden (Shanghai)"],
   ]),
+  ...W("L26 姐姐怎么去机场", [
+    ["机场", "jīchǎng", "airport"], ["出租车", "chūzūchē", "taxi, cab"],
+    // other sections (the rest of this lesson's list is already in earlier folders)
+    ["生煎", "shēngjiān", "pan-fried pork buns (Shanghai snack)"], ["蟹壳黄", "xièkéhuáng", "crab-shell pastry (Shanghai snack)"],
+    ["葱油拌面", "cōngyóu bànmiàn", "scallion oil noodles"], ["虾米", "xiāmǐ", "dried shrimp"],
+  ]),
+  ...W("L27 我去埃及旅游了", [
+    ["了", "le", "(particle: action done, or a change)"], ["玩儿", "wánr", "to play, have fun"],
+    ["体育馆", "tǐyùguǎn", "gymnasium"], ["体育", "tǐyù", "sports"], ["和", "hé", "and"], ["剧院", "jùyuàn", "theatre"],
+    ["埃及", "Āijí", "Egypt"], ["旅游", "lǚyóu", "to travel, tour"], ["这么", "zhème", "so, like this"],
+    ["快", "kuài", "quick, soon"], ["回来", "huílai", "to come back"],
+    // other sections
+    ["老师", "lǎoshī", "teacher"], ["健身", "jiànshēn", "to work out"], ["大衣", "dàyī", "overcoat"],
+    ["京剧", "jīngjù", "Peking opera"], ["上网", "shàngwǎng", "to go online"], ["礼物", "lǐwù", "gift, present"],
+    ["桂林", "Guìlín", "Guilin"],
+  ]),
 ];
 
 // Light Lessons: each lesson's official "new words" list only (no grammar, dialogue or culture extras).
@@ -163,6 +179,8 @@ const LIGHT_LESSONS = {
   "L23 银行怎么走": "银行 走 一直 往 前 楼 火车站 火车 北 第 路口 右 拐 邮局 电影院 左",
   "L24 那个白色的大楼就是": "医院 南 高 超市 商店 饭馆儿 对面 西 学校 地铁站 地铁 东",
   "L25 我坐公共汽车上班": "同事 明天 世界环境日 开车 打算 上班 坐 公共汽车 骑 自行车 走路 周末",
+  "L26 姐姐怎么去机场": "爷爷 去 跑步 公园 打车 机场 奶奶 出租车 公司 上海 飞机 北京",
+  "L27 我去埃及旅游了": "同学 了 颐和园 玩儿 体育馆 体育 买 和 剧院 埃及 旅游 这么 快 回来",
 };
 for (const [lesson, list] of Object.entries(LIGHT_LESSONS)) {
   for (const h of list.split(" ")) {
@@ -1052,4 +1070,90 @@ Object.assign(PARTS, {
   "难": { py: "nán", en: "difficult", note: "Sound part in 滩." },
   "予": { py: "yǔ", en: "to give", note: "Sound part in 豫." },
   "象": { py: "xiàng", en: "elephant", note: "An elephant: trunk, body, legs, tail." },
+});
+
+// ---------- Course characters: L26–L27 ----------
+Object.assign(CHARS, {
+  // L26
+  "出": { py: "chū", en: "to go out", type: "compound", parts: [p("止", "picture", "foot"), p("凵", "picture", "pit")],
+    story: "Originally a foot 止 stepping up out of a pit 凵: going out. Today it looks like two mountains stacked. 出租车 is a car out for rent: a taxi." },
+  "租": { py: "zū", en: "to rent", type: "phono", parts: [p("禾", "meaning", "grain"), p("且", "sound", "qiě")],
+    story: "Grain 禾 with 且 for the sound: land rent was once paid in grain. 出租 to rent out, 出租车 taxi." },
+  "场": { py: "chǎng", en: "open ground, place", type: "phono", trad: "場", parts: [p("土", "meaning", "earth, ground"), p("昜", "sound", "yáng (simplified)")],
+    story: "Open ground 土 with 昜 (yáng) for the sound, simplified the same way as in 汤. A field, a venue: 机场 is the “machine field”, the airport." },
+  // Shanghai snacks
+  "煎": { py: "jiān", en: "to pan-fry", type: "phono", parts: [p("前", "sound", "qián"), p("灬", "meaning", "fire")],
+    story: "Fire 灬 under the pan, with 前 (qián) for the sound: frying in a little oil. 生煎 pan-fried buns." },
+  "蟹": { py: "xiè", en: "crab", type: "phono", parts: [p("解", "sound", "jiě"), p("虫", "meaning", "creature")],
+    story: "A creature 虫 with 解 (jiě, to take apart) for the sound: you take a crab apart to eat it. 蟹壳黄 crab-shell pastry." },
+  "壳": { py: "ké", en: "shell", type: "compound", trad: "殼", parts: [p("士", "picture", "top"), p("冖", "picture", "cover"), p("几", "picture", "base")],
+    story: "Simplified from 殼, a hard husk being tapped. A shell or husk: 蟹壳 crab shell." },
+  "虾": { py: "xiā", en: "shrimp", type: "phono", trad: "蝦", parts: [p("虫", "meaning", "creature"), p("下", "sound", "xià")],
+    story: "A creature 虫 with 下 (xià) for the sound. 虾米 dried shrimp, “shrimp rice”." },
+  "葱": { py: "cōng", en: "spring onion", type: "phono", trad: "蔥", parts: [p("艹", "meaning", "plant"), p("匆", "sound", "cōng")],
+    story: "A plant 艹 with 匆 (cōng) for the sound. 葱油 scallion oil." },
+  "油": { py: "yóu", en: "oil", type: "phono", parts: [p("氵", "meaning", "liquid"), p("由", "sound", "yóu")],
+    story: "A liquid 氵 with 由 (yóu) for the exact sound: oil. 葱油拌面 scallion oil noodles." },
+  "拌": { py: "bàn", en: "to mix", type: "phono", parts: [p("扌", "meaning", "hand"), p("半", "sound", "bàn")],
+    story: "Done by hand 扌, with 半 (bàn) for the exact sound: to stir, to toss. 拌面 noodles mixed with sauce." },
+
+  // L27
+  "了": { py: "le / liǎo", en: "(done; change)", type: "pictograph", parts: [],
+    story: "A swaddled baby with no arms showing: 子 without its arms. Borrowed as the particle le: an action is done or something has changed. 我买苹果了." },
+  "玩": { py: "wán", en: "to play", type: "phono", parts: [p("王", "meaning", "jade"), p("元", "sound", "yuán")],
+    story: "Jade 王 with 元 (yuán) for the sound: turning a jade piece over in your hands for fun. To play, to have fun: 玩儿." },
+  "体": { py: "tǐ", en: "body", type: "compound", trad: "體", parts: [p("亻", "meaning", "person"), p("本", "meaning", "root, base")],
+    story: "A person 亻 and 本, root: the base of a person, the body. Traditional 體 used bones 骨. 体育 sports, physical education." },
+  "育": { py: "yù", en: "to raise, educate", type: "compound", parts: [p("𠫓", "picture", "baby, head down"), p("月", "meaning", "flesh")],
+    story: "A newborn coming out head first (an upside-down 子) above flesh 月: giving birth and raising a child. 体育 is “raising the body”: sports." },
+  "剧": { py: "jù", en: "drama, play", type: "phono", trad: "劇", parts: [p("居", "sound", "jū"), p("刂", "meaning", "knife")],
+    story: "居 (jū) for the sound and a knife 刂. It first meant fierce, intense; later a drama. 京剧 Peking opera, 剧院 theatre." },
+  "埃": { py: "āi", en: "dust", type: "phono", parts: [p("土", "meaning", "earth"), p("矣", "sound", "yǐ")],
+    story: "Earth 土 with 矣 for the sound: fine dust. In 埃及, Egypt, it just spells the sound Āi." },
+  "及": { py: "jí", en: "to reach", type: "compound", parts: [p("人", "picture", "person"), p("又", "meaning", "hand")],
+    story: "A hand 又 grabbing a person 人 from behind: to catch up, to reach. In 埃及 it spells the sound jí." },
+  "旅": { py: "lǚ", en: "to travel", type: "compound", parts: [p("㫃", "meaning", "flag, banner"), p("人", "picture", "people (two, under the flag)")],
+    story: "People gathered under a banner 㫃: troops on the march. Moving as a group became travel. 旅游 to tour, 旅行 to travel." },
+  "快": { py: "kuài", en: "fast; happy", type: "phono", parts: [p("忄", "meaning", "heart"), p("夬", "sound", "guài")],
+    story: "Heart 忄 with 夬 for the sound: a light, cheerful heart (快乐, happy). Also quick: 这么快 so fast." },
+  "回": { py: "huí", en: "to return", type: "pictograph", parts: [],
+    story: "A whirlpool spiralling round, now drawn as a box inside a box: going round and coming back. 回来 come back, 回家 go home." },
+  "来": { py: "lái", en: "to come", type: "loan", trad: "來", parts: [],
+    story: "A stalk of wheat with its ears. The picture was borrowed for the sound of “come”. 回来 to come back." },
+  "老": { py: "lǎo", en: "old", type: "pictograph", parts: [p("耂", "picture", "old man, long hair"), p("匕", "picture", "walking stick")],
+    story: "An old man with long hair 耂 leaning on a stick 匕. Old, and a respectful title: 老师 teacher." },
+  "师": { py: "shī", en: "teacher, master", type: "compound", trad: "師", parts: [p("丨", "stand-in", "simplified 𠂤 (a camp)"), p("帀", "meaning", "to go around")],
+    story: "Traditional 師: a mound camp 𠂤 and 帀, going around it: an army division. Its leader became a master, a teacher: 老师." },
+  "健": { py: "jiàn", en: "healthy, strong", type: "phono", parts: [p("亻", "meaning", "person"), p("建", "sound", "jiàn")],
+    story: "A person 亻 with 建 (jiàn, to build) for the exact sound: a well-built person, strong. 健身 to work out." },
+  "身": { py: "shēn", en: "body", type: "pictograph", parts: [],
+    story: "A person seen from the side with a big belly: first pregnancy, then the body. 健身 is “strengthen the body”." },
+  "衣": { py: "yī", en: "clothes", type: "pictograph", parts: [],
+    story: "A robe: the collar on top, two sleeves, the hem below. 大衣 overcoat. On the left of a character it becomes 衤." },
+  "礼": { py: "lǐ", en: "ritual; gift", type: "compound", trad: "禮", parts: [p("礻", "meaning", "altar, spirits"), p("乚", "stand-in", "simplified 豊 (ritual vessel)")],
+    story: "An altar 礻 for offerings: rituals and courtesy. Traditional 禮 had a vessel full of offerings; it was simplified to one hook 乚. 礼物 a gift." },
+  "物": { py: "wù", en: "thing", type: "phono", parts: [p("牛", "meaning", "ox"), p("勿", "sound", "wù")],
+    story: "An ox 牛 with 勿 (wù) for the exact sound: oxen were the most valuable things. Any object: 礼物 gift, 动物 animal." },
+  "桂": { py: "guì", en: "osmanthus", type: "phono", parts: [p("木", "meaning", "tree"), p("圭", "sound", "guī")],
+    story: "A tree 木 with 圭 (guī) for the sound: the sweet osmanthus tree. 桂林, Guilin, is the osmanthus forest." },
+});
+Object.assign(PARTS, {
+  "凵": { py: "kǎn", en: "pit, open box", note: "A pit or an open container. In 出 the foot climbs out of it." },
+  "且": { py: "qiě", en: "moreover", note: "An ancestral tablet or a stand. Sound part in 租, 姐, 组." },
+  "昜": { py: "yáng", en: "sunshine", note: "The sun rising over the horizon. Sound part in 場 and 湯; simplified to 𠃓 in 场 and 汤." },
+  "解": { py: "jiě", en: "to take apart", note: "A knife 刀 cutting the horn 角 off an ox 牛. Sound part in 蟹." },
+  "士": { py: "shì", en: "scholar, soldier", note: "Top part of 壳; also a man of standing in 士兵." },
+  "匆": { py: "cōng", en: "hurried", note: "Sound part in 葱." },
+  "本": { py: "běn", en: "root, origin", note: "A tree 木 with a mark at its roots. In 体 it means the base of the body." },
+  "𠫓": { py: "tū", en: "baby, head first", note: "An upside-down 子: a child being born. Top of 育 and 流." },
+  "居": { py: "jū", en: "to live, reside", note: "Sound part in 剧." },
+  "矣": { py: "yǐ", en: "(old particle)", note: "Sound part in 埃." },
+  "㫃": { py: "yǎn", en: "flag, banner", note: "A flagpole 方 with a streamer 𠂉. In 旅 and 族 people gather under it." },
+  "忄": { py: "xīn", en: "heart (side form)", from: "心", note: "The heart 心 standing upright on the left. Marks feelings: 快, 忙, 情." },
+  "耂": { py: "lǎo", en: "old (top form)", from: "老", note: "Long hair of an old man. Top of 老 and 考." },
+  "帀": { py: "zā", en: "to go around", note: "Right side of 师: circling around." },
+  "建": { py: "jiàn", en: "to build", note: "A hand with a brush 聿 laying out a plan, walking 廴. Sound part in 健 and 键." },
+  "礻": { py: "shì", en: "altar, spirits", from: "示", note: "Side form of 示, an altar. Marks rituals and blessings: 礼, 福, 神." },
+  "乚": { py: "yǐ", en: "hook", note: "A single hooked stroke. In 礼 it stands in for the old ritual vessel." },
+  "勿": { py: "wù", en: "do not", note: "A flag or a knife with flecks. Sound part in 物." },
 });
